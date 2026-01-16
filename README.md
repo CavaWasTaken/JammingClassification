@@ -9,7 +9,7 @@ The solution is designed to operate on an embedded hardware platform, moving awa
 
 - **Signal Acquisition:**
 
-- Hardware: HackRF One (SDR) + Portable Single Board Computer (SBC).
+-   Hardware: HackRF One (SDR) + Portable Single Board Computer (SBC).
 
 - Sampling Rate: 10 MHz. This frequency is selected to cover the full bandwidth of the GPS signal, ensuring higher fidelity than standard 2 MHz narrowband captures.
 
