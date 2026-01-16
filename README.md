@@ -61,6 +61,3 @@ The project utilizes a custom dataset generated to train the ML models. It inclu
 
 - **Jammed Signals:** Captured with interference powers ranging from -5 dB to 30 dB (Jamming-to-Signal ratio).
 Note: Due to the high sampling rate and the large volume of raw binary I/Q data (approximated at 100 GB for the full training set), the dataset is not hosted directly in this repository.
-
-**Context**
-This work is part of the Navigation and Monitoring course studies, exploring the intersection of Radio Frequency (RF) Engineering, Digital Signal Processing, and Embedded Artificial Intelligence.
