@@ -8,23 +8,17 @@ While standard detection systems are often stationary and bulky, this project ai
 The solution is designed to operate on an embedded hardware platform, moving away from desktop-based processing to a portable architecture. The data pipeline consists of the following stages:
 
 - **Signal Acquisition:**
-
--   Hardware: HackRF One (SDR) + Portable Single Board Computer (SBC).
-
-- Sampling Rate: 10 MHz. This frequency is selected to cover the full bandwidth of the GPS signal, ensuring higher fidelity than standard 2 MHz narrowband captures.
-
-- Data Format: Complex I/Q samples (In-phase and Quadrature) captured in 100-microsecond bursts.
+  - Hardware: HackRF One (SDR) + Portable Single Board Computer (SBC).
+  - Sampling Rate: 10 MHz. This frequency is selected to cover the full bandwidth of the GPS signal, ensuring higher fidelity than standard 2 MHz narrowband captures.
+  - Data Format: Complex I/Q samples (In-phase and Quadrature) captured in 100-microsecond bursts.
 
 - **Preprocessing:**
-
-- Time-to-Frequency Conversion: The raw complex number array is transformed into the frequency domain using Fourier Transforms.
-
-- Spectrogram Generation: The system generates a binary frequency matrix (128 frequency bins x ~1000 samples). This creates a visual representation (image) of the signal, where jamming patterns are more distinct than in the time domain.
+  - Time-to-Frequency Conversion: The raw complex number array is transformed into the frequency domain using Fourier Transforms.
+  - Spectrogram Generation: The system generates a binary frequency matrix (128 frequency bins x ~1000 samples). This creates a visual representation (image) of the signal, where jamming patterns are more distinct than in the time domain.
 
 - **Classification (Inference):**
-- The generated spectrograms are fed into a Machine Learning model (Convolutional Neural Network or Light GRU).
-
-- The model detects the presence of jamming and classifies the specific type of attack.
+  - The generated spectrograms are fed into a Machine Learning model (Convolutional Neural Network or Light GRU).
+  - The model detects the presence of jamming and classifies the specific type of attack.
 
 **Jamming Classifications**
 The system is trained to identify and distinguish between the following specific interference waveforms:
