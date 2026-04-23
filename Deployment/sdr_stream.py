@@ -1,7 +1,7 @@
 import numpy as np
 import collections
 import threading
-from utils.sdr_base import sdr_base
+from sdr_base import sdr_base
 
 
 class SdrStream(sdr_base):
@@ -63,11 +63,10 @@ class SdrStream(sdr_base):
             print("--- No IQ data available!")
             return None
 
-        num_samples = int(window_chunk * self.samp_rate * 2)
+        num_samples = int(window_chunk * self.samp_rate)
 
-        # Get the last chunk from the buffer
-        iq_raw = np.array(self.iq_buffer[-1], dtype=np.uint8)[-num_samples:]    # use float32
-        iq_data = iq_raw.view(np.int8).astype(np.float32).view(np.complex64)
+        # vector_sink_c already provides complex IQ samples.
+        iq_data = np.asarray(self.iq_buffer[-1], dtype=np.complex64)[-num_samples:]
 
         if np.array_equal(iq_data, self.iq):  # True
             print(f'--- IQ data of two streaming are equal.')

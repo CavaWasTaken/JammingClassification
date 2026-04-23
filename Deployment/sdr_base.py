@@ -8,7 +8,7 @@
 # Title: Full sample of grabbing signals
 # Author: Arman Ebrahimi Mehr
 # Copyright: NavSAS
-# GNU Radio version: 3.10.11.0
+# GNU Radio version: 3.10.12.0
 
 from gnuradio import blocks
 from gnuradio import gr
@@ -24,9 +24,9 @@ import time
 import threading
 
 
+# NUOVO sdr_base.py
 
-
-class sdr_base(gr.top_block):
+class dataset_generation_hack_rf_deploy(gr.top_block):
 
     def __init__(self):
         gr.top_block.__init__(self, "Full sample of grabbing signals", catch_exceptions=True)
@@ -36,8 +36,6 @@ class sdr_base(gr.top_block):
         # Variables
         ##################################################
         self.samp_rate = samp_rate = 10e6
-        self.buffer_size = buffer_size = 500e-3
-        self.num_samples_buffer = num_samples_buffer = int(buffer_size*samp_rate)
         self.f_L1 = f_L1 = 1575420000
 
         ##################################################
@@ -45,7 +43,7 @@ class sdr_base(gr.top_block):
         ##################################################
 
         self.osmosdr_source_0 = osmosdr.source(
-            args="numchan=" + str(1) + " " + "hackrf=0"    # name of sdr
+            args="numchan=" + str(1) + " " + "hackrf=0"
         )
         self.osmosdr_source_0.set_time_unknown_pps(osmosdr.time_spec_t())
         self.osmosdr_source_0.set_sample_rate(samp_rate)
@@ -53,21 +51,21 @@ class sdr_base(gr.top_block):
         self.osmosdr_source_0.set_freq_corr(0, 0)
         self.osmosdr_source_0.set_dc_offset_mode(0, 0)
         self.osmosdr_source_0.set_iq_balance_mode(0, 0)
-        self.osmosdr_source_0.set_gain_mode(True, 0)
+        self.osmosdr_source_0.set_gain_mode(False, 0)
         self.osmosdr_source_0.set_gain(0, 0)
-        self.osmosdr_source_0.set_if_gain(0, 0)
+        self.osmosdr_source_0.set_if_gain(16, 0)
         self.osmosdr_source_0.set_bb_gain(0, 0)
         self.osmosdr_source_0.set_antenna('', 0)
         self.osmosdr_source_0.set_bandwidth(samp_rate, 0)
-        self.blocks_vector_sink_x_0 = blocks.vector_sink_b(1, 1024)
-        self.blocks_complex_to_interleaved_char_0 = blocks.complex_to_interleaved_char(False, 2**7)
+        self.blocks_vector_sink_x_0 = blocks.vector_sink_c(1, 1024)
+        self.blocks_correctiq_0 = blocks.correctiq()
 
 
         ##################################################
         # Connections
         ##################################################
-        self.connect((self.blocks_complex_to_interleaved_char_0, 0), (self.blocks_vector_sink_x_0, 0))
-        self.connect((self.osmosdr_source_0, 0), (self.blocks_complex_to_interleaved_char_0, 0))
+        self.connect((self.blocks_correctiq_0, 0), (self.blocks_vector_sink_x_0, 0))
+        self.connect((self.osmosdr_source_0, 0), (self.blocks_correctiq_0, 0))
 
 
     def get_samp_rate(self):
@@ -75,22 +73,8 @@ class sdr_base(gr.top_block):
 
     def set_samp_rate(self, samp_rate):
         self.samp_rate = samp_rate
-        self.set_num_samples_buffer(int(self.buffer_size*self.samp_rate))
         self.osmosdr_source_0.set_sample_rate(self.samp_rate)
         self.osmosdr_source_0.set_bandwidth(self.samp_rate, 0)
-
-    def get_buffer_size(self):
-        return self.buffer_size
-
-    def set_buffer_size(self, buffer_size):
-        self.buffer_size = buffer_size
-        self.set_num_samples_buffer(int(self.buffer_size*self.samp_rate))
-
-    def get_num_samples_buffer(self):
-        return self.num_samples_buffer
-
-    def set_num_samples_buffer(self, num_samples_buffer):
-        self.num_samples_buffer = num_samples_buffer
 
     def get_f_L1(self):
         return self.f_L1
@@ -102,7 +86,7 @@ class sdr_base(gr.top_block):
 
 
 
-def main(top_block_cls=sdr_base, options=None):
+def main(top_block_cls=dataset_generation_hack_rf_deploy, options=None):
     tb = top_block_cls()
 
     def sig_handler(sig=None, frame=None):
@@ -117,6 +101,11 @@ def main(top_block_cls=sdr_base, options=None):
     tb.start()
     tb.flowgraph_started.set()
 
+    try:
+        input('Press Enter to quit: ')
+    except EOFError:
+        pass
+    tb.stop()
     tb.wait()
 
 
