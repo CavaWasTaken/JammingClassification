@@ -26,7 +26,7 @@ import threading
 
 # NUOVO sdr_base.py
 
-class dataset_generation_hack_rf_deploy(gr.top_block):
+class SdrBase(gr.top_block):
 
     def __init__(self):
         gr.top_block.__init__(self, "Full sample of grabbing signals", catch_exceptions=True)
@@ -36,6 +36,8 @@ class dataset_generation_hack_rf_deploy(gr.top_block):
         # Variables
         ##################################################
         self.samp_rate = samp_rate = 10e6
+        self.buffer_size = buffer_size = 500e-3
+        self.num_samples_buffer = num_samples_buffer = int(buffer_size * samp_rate)
         self.f_L1 = f_L1 = 1575420000
 
         ##################################################
@@ -76,6 +78,19 @@ class dataset_generation_hack_rf_deploy(gr.top_block):
         self.osmosdr_source_0.set_sample_rate(self.samp_rate)
         self.osmosdr_source_0.set_bandwidth(self.samp_rate, 0)
 
+    def get_buffer_size(self):
+        return self.buffer_size
+    
+    def set_buffer_size(self, buffer_size):
+        self.buffer_size = buffer_size
+        self.num_samples_buffer = int(self.buffer_size * self.samp_rate)
+
+    def get_num_samples_buffer(self):
+        return self.num_samples_buffer
+    
+    def set_num_samples_buffer(self, num_samples_buffer):
+        self.num_samples_buffer = num_samples_buffer
+
     def get_f_L1(self):
         return self.f_L1
 
@@ -86,7 +101,7 @@ class dataset_generation_hack_rf_deploy(gr.top_block):
 
 
 
-def main(top_block_cls=dataset_generation_hack_rf_deploy, options=None):
+def main(top_block_cls=SdrBase, options=None):
     tb = top_block_cls()
 
     def sig_handler(sig=None, frame=None):

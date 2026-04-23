@@ -211,8 +211,8 @@ class OnnxLiveClassifier:
         }
 
 def main():
-    onnx_path = os.getenv("/content/drive/MyDrive/N-MON/jetson_export/jamming_model.onnx")
-    class_names_path = os.getenv("/content/drive/MyDrive/N-MON/jetson_export/class_names.json")
+    onnx_path = "./Deployment/export/jamming_model.onnx"
+    class_names_path = "./Deployment/export/class_names.json"
 
     classifier = OnnxLiveClassifier(onnx_path=onnx_path, class_names_path=class_names_path)
 
@@ -221,11 +221,26 @@ def main():
     
     # Start streaming from HackRF One
     sdr.start_stream()
+    
+    # Give the streaming thread time to start and begin collecting data
+    import time as time_module
+    print("--- Waiting for SDR streaming thread to initialize...")
+    time_module.sleep(2)
+    
+    if not sdr.flowgraph_started.is_set():
+        print("ERROR: SDR streaming thread did not start!")
+    else:
+        print("--- SDR streaming thread confirmed started")
 
     try:
+        iteration = 0
         while True:
+            iteration += 1
             # Get complex64 IQ samples from buffer
             iq_samples = sdr.get_samples(window_chunk=200e-6)
+            
+            if iteration % 20 == 0:
+                print(f"[Iteration {iteration}] Buffer size: {len(sdr.iq_buffer)}, Last IQ shape: {iq_samples.shape if iq_samples is not None else 'None'}")
             
             if iq_samples is None:
                 continue
@@ -242,12 +257,23 @@ def main():
             # Extract features directly from signal
             features = extract_features_direct(signal_int8, fs)
 
-            # normalize features using same method as offline dataset generation
-            scaler = np.load("/content/drive/MyDrive/N-MON/Processed_Dataset/FEATURES/scalar_model.pkl", allow_pickle=True)
+            # normalize features using same method as offline dataset generation by loading pkl scaler and applying transform
+            scaler_path = "./Deployment/export/scaler_model.pkl"
+            if not os.path.exists(scaler_path):
+                raise FileNotFoundError(f"Feature scaler not found: {scaler_path}")
+            
+            # Try joblib first (more robust), fall back to pickle
+            try:
+                import joblib
+                scaler = joblib.load(scaler_path)
+            except:
+                import pickle
+                with open(scaler_path, "rb") as f:
+                    scaler = pickle.load(f)
+            
+            features_scaled = scaler.transform([features])[0]
 
-            features = scaler.transform(features)
-
-            prediction = classifier.predict(spec=spec, features=features)
+            prediction = classifier.predict(spec=spec, features=features_scaled)
 
             energy_msg = "n/a"
             if prediction["energy"] is not None:
@@ -270,3 +296,7 @@ def main():
         print("Stopping signal acquisition...")
     finally:
         sdr.stop_stream()
+
+
+if __name__ == "__main__":
+    main()

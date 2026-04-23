@@ -1,10 +1,10 @@
 import numpy as np
 import collections
 import threading
-from sdr_base import sdr_base
+from sdr_base import SdrBase
 
 
-class SdrStream(sdr_base):
+class SdrStream(SdrBase):
     def __init__(self, *args, buffer_size=500e-3, buffer_length=10, **kwargs):
         super().__init__(*args, **kwargs)
         self.set_buffer_size(buffer_size)
