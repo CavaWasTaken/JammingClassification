@@ -1,3 +1,4 @@
+import pandas as pd
 import numpy as np
 from scipy import signal as signal_sci
 from scipy.stats import skew, kurtosis
@@ -62,6 +63,7 @@ def compute_spectrogram(signal_int8, fs=10e6, nfft=128, overlap_percentage=0.999
     Compute spectrogram using same parameters as signal_analysis.spectrogram_image()
     Returns spectrogram array (nfft, time_steps)
     """
+
     window = ('kaiser', 5.0)
     win = signal_sci.get_window(window, nfft)
     number_overlap = math.floor(nfft * overlap_percentage)
@@ -232,6 +234,12 @@ def main():
     else:
         print("--- SDR streaming thread confirmed started")
 
+    # create a csv file where to write predictions with columns: timestamp, pred_label, confidence, energy
+    csv_path = "./Deployment/predictions.csv"
+    if not os.path.exists(csv_path):
+        with open(csv_path, "w") as f:
+            f.write("timestamp,pred_label,confidence,energy\n")
+
     try:
         iteration = 0
         while True:
@@ -244,18 +252,36 @@ def main():
             
             if iq_samples is None:
                 continue
-            
-            # Convert complex64 IQ to magnitude (float32) - substitute the gnu radio block
-            signal_float = np.abs(iq_samples).astype(np.float32)
-            
-            # Convert to int8 using same method as offline dataset generation
-            signal_int8 = convert_float_to_int8(signal_float)
-            
+
+            # iq_samples is complex64 array of shape (num_samples,), where num_samples = window_chunk * fs = 200e-6 * 10e6 = 2000 samples per chunk
+
+            # for computing the spectogrm use iq_samples with 1000 samples to match the dataset parameters
+            iq_samples_ = iq_samples[:1000]
+
             # Compute spectrogram
-            spec, freq, t = compute_spectrogram(signal_int8, fs=fs)
-            
+            spec, freq, t = compute_spectrogram(iq_samples_, fs=fs)
+
+            # show the spectrogram shape and value range for debugging
+            print('\n--- Spectrogram computed ---')
+            print(f"Spectrogram shape: {spec.shape}, value range: [{spec.min()}, {spec.max()}]")
+            print(f"Frequency bins: {len(freq)}, Time bins: {len(t)}")
+            print(f'Frequency range: [{freq.min()}, {freq.max()}], Time range: [{t.min()}, {t.max()}]')
+
+            # convert the spectogram to int8
+            spec_int8 = convert_float_to_int8(spec)
+
+            print(f"Spectrogram int8 shape: {spec_int8.shape}, value range: [{spec_int8.min()}, {spec_int8.max()}]")
+
             # Extract features directly from signal
-            features = extract_features_direct(signal_int8, fs)
+            features = extract_features_direct(iq_samples, fs)
+
+            print('\n--- Features extracted ---')
+            print(f'Number of features extracted: {len(features)}')
+            print(f"Extracted features: {features}")
+
+            feature_names = ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12', 'f13', 'f14', 'f15', 'f16']
+
+            features_df = pd.DataFrame([features], columns=feature_names)
 
             # normalize features using same method as offline dataset generation by loading pkl scaler and applying transform
             scaler_path = "./Deployment/export/scaler_model.pkl"
@@ -271,7 +297,10 @@ def main():
                 with open(scaler_path, "rb") as f:
                     scaler = pickle.load(f)
             
-            features_scaled = scaler.transform([features])[0]
+            features_scaled = scaler.transform(features_df)[0]
+
+            print(f'Number of features after scaling: {len(features_scaled)}')
+            print(f"Scaled features: {features_scaled}")
 
             prediction = classifier.predict(spec=spec, features=features_scaled)
 
@@ -288,6 +317,18 @@ def main():
                     shape=spec.shape,
                 )
             )
+
+            csv_path = "./Deployment/predictions.csv"
+            timestamp = time.time()
+            with open(csv_path, "a") as f:
+                f.write(f"{timestamp},{prediction['pred_label']},{prediction['confidence']:.4f},{energy_msg}\n")
+
+            # save the spec as npy file
+            np.save(f"./Deployment/spec_{timestamp}.npy", spec_int8)
+            # save the features as npy file
+            np.save(f"./Deployment/features_{timestamp}.npy", features_scaled)
+
+            exit(0)
 
             # Optional tiny sleep to keep console readable.
             time.sleep(0.05)
