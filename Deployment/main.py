@@ -118,6 +118,11 @@ def main():
             print(f'\n--- Number of features after scaling: {len(features_scaled)}')
             print(f"\n--- Scaled features:\n{features_scaled}")
 
+            # write the scaled features into a csv file for debugging
+            features_csv_path = "./Deployment/extracted_features.csv"
+            with open(features_csv_path, "a") as f:               
+                f.write(",".join(map(str, features_scaled)) + "\n")
+
             inputs = {
                 'spectrogram': spec_int8[np.newaxis, np.newaxis, :, :].astype(np.float32),
                 'features': features_scaled[np.newaxis, :].astype(np.float32),
