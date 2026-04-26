@@ -3,7 +3,6 @@ import collections
 import threading
 from sdr_base import SdrBase
 
-
 class SdrStream(SdrBase):
     def __init__(self, *args, buffer_size=500e-3, buffer_length=10, **kwargs):
         super().__init__(*args, **kwargs)

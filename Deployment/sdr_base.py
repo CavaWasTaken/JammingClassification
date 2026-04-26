@@ -23,7 +23,6 @@ import osmosdr
 import time
 import threading
 
-
 # NUOVO sdr_base.py
 
 class SdrBase(gr.top_block):
