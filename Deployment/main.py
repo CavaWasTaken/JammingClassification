@@ -296,6 +296,16 @@ def main():
                 import pickle
                 with open(scaler_path, "rb") as f:
                     scaler = pickle.load(f)
+
+            # print information about the scaler for debugging
+            print('\n--- Feature scaler loaded ---')
+            print(f"Scaler type: {type(scaler)}")
+            if hasattr(scaler, "mean_") and hasattr(scaler, "scale_"):
+                print(f"Scaler mean: {scaler.mean_}")
+                print(f"Scaler scale: {scaler.scale_}")
+            print(scaler)
+
+            exit(0)
             
             features_scaled = scaler.transform(features_df)[0]
 
