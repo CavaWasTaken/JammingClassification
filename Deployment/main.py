@@ -54,7 +54,20 @@ def main():
     # create a csv file where to write predictions with columns: timestamp, pred_label, confidence, energy
     csv_path = "./Deployment/predictions.csv"
     with open(csv_path, "w") as f:
-        f.write("timestamp,pred_label,confidence,energy\n")
+        f.write("timestamp,pred_label,confidence,energy,processing_time_ms,inference_time_ms\n")
+
+    scaler_path = "./Deployment/export/scaler_model.pkl"
+    if not os.path.exists(scaler_path):
+        raise FileNotFoundError(f"Feature scaler not found: {scaler_path}")
+    
+    # Try joblib first (more robust), fall back to pickle
+    try:
+        import joblib
+        scaler = joblib.load(scaler_path)
+    except:
+        import pickle
+        with open(scaler_path, "rb") as f:
+            scaler = pickle.load(f)
 
     signal_analysis_live_object = SignalAnalysisLive(fs=fs)    # create the SignalAnalysis object
 
@@ -64,6 +77,8 @@ def main():
             iteration += 1
             # Get complex64 IQ samples from buffer
             iq_samples = sdr.get_samples(window_chunk=200e-6)
+
+            start_time_processing = time.perf_counter()
             
             if iteration % 20 == 0:
                 print(f"[Iteration {iteration}] Buffer size: {len(sdr.iq_buffer)}, Last IQ shape: {iq_samples.shape if iq_samples is not None else 'None'}")
@@ -80,48 +95,40 @@ def main():
             spec, freq, t = signal_analysis_live_object.compute_spectrogram(iq_samples_)
             
             # show the spectrogram shape and value range for debugging
-            print(f"\n--- Spectrogram shape: {spec.shape}, value range: [{spec.min()}, {spec.max()}]")
-            print(f"\n--- Frequency bins: {len(freq)}, Time bins: {len(t)}")
-            print(f"\n--- Frequency range: [{freq.min()}, {freq.max()}], Time range: [{t.min()}, {t.max()}]")
+            # print(f"\n--- Spectrogram shape: {spec.shape}, value range: [{spec.min()}, {spec.max()}]")
+            # print(f"\n--- Frequency bins: {len(freq)}, Time bins: {len(t)}")
+            # print(f"\n--- Frequency range: [{freq.min()}, {freq.max()}], Time range: [{t.min()}, {t.max()}]")
 
             # convert the spectogram to int8
             spec_int8 = convert_float_to_int8(spec)
 
-            print(f"\n--- Spectrogram int8 shape: {spec_int8.shape}, value range: [{spec_int8.min()}, {spec_int8.max()}]")
+            # print(f"\n--- Spectrogram int8 shape: {spec_int8.shape}, value range: [{spec_int8.min()}, {spec_int8.max()}]")
 
             # Extract features directly from signal
             features = signal_analysis_live_object.extract_features_direct(iq_samples)
 
-            print(f'\n--- Number of features extracted: {len(features)}')
-            print(f"\n--- Extracted features:\n{features}")
+            # print(f'\n--- Number of features extracted: {len(features)}')
+            # print(f"\n--- Extracted features:\n{features}")
 
-            feature_names = ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12', 'f13', 'f14', 'f15', 'f16']
+            # feature_names = ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12', 'f13', 'f14', 'f15', 'f16']
 
-            features_df = pd.DataFrame([features], columns=feature_names)
+            # features_df = pd.DataFrame([features], columns=feature_names)
 
             # normalize features using same method as offline dataset generation by loading pkl scaler and applying transform
-            scaler_path = "./Deployment/export/scaler_model.pkl"
-            if not os.path.exists(scaler_path):
-                raise FileNotFoundError(f"Feature scaler not found: {scaler_path}")
-            
-            # Try joblib first (more robust), fall back to pickle
-            try:
-                import joblib
-                scaler = joblib.load(scaler_path)
-            except:
-                import pickle
-                with open(scaler_path, "rb") as f:
-                    scaler = pickle.load(f)
 
-            features_scaled = scaler.transform(features_df)[0]
+            features_scaled = scaler.transform(features)
 
-            print(f'\n--- Number of features after scaling: {len(features_scaled)}')
-            print(f"\n--- Scaled features:\n{features_scaled}")
+            # print(f'\n--- Number of features after scaling: {len(features_scaled)}')
+            # print(f"\n--- Scaled features:\n{features_scaled}")
 
             # write the scaled features into a csv file for debugging
-            features_csv_path = "./Deployment/extracted_features.csv"
-            with open(features_csv_path, "a") as f:               
-                f.write(",".join(map(str, features_scaled)) + "\n")
+            # features_csv_path = "./Deployment/extracted_features.csv"
+            # with open(features_csv_path, "a") as f:               
+            #     f.write(",".join(map(str, features_scaled)) + "\n")
+
+            end_time_processing = time.perf_counter()
+
+            processing_time_ms = (end_time_processing - start_time_processing) * 1000
 
             inputs = {
                 'spectrogram': spec_int8[np.newaxis, np.newaxis, :, :].astype(np.float32),
@@ -145,15 +152,15 @@ def main():
 
             predicted_class = np.argmax(logits[0])
             class_predicted_name = class_names[predicted_class] if predicted_class < len(class_names) else "Unknown"
-            print(f"\n--- Predicted class: {class_predicted_name} | Inference time: {inference_time_ms:.2f} ms | FPS: {fps:.1f}")
-            print(f"\n--- Logits: {logits}")
-            print(f"\n--- Energy: {energy}")
-            print(f"\n--- Penultimate shape: {penultimate.shape}")
+            # print(f"\n--- Predicted class: {class_predicted_name} | Inference time: {inference_time_ms:.2f} ms | FPS: {fps:.1f}")
+            # print(f"\n--- Logits: {logits}")
+            # print(f"\n--- Energy: {energy}")
+            # print(f"\n--- Penultimate shape: {penultimate.shape}")
 
             csv_path = "./Deployment/predictions.csv"
             timestamp = time.time()
             with open(csv_path, "a") as f:
-                f.write(f"{timestamp},{class_predicted_name},{np.max(logits[0]):.4f},{energy[0]:.4f}\n")
+                f.write(f"{timestamp},{class_predicted_name},{np.max(logits[0]):.4f},{energy[0]:.4f},{processing_time_ms:.2f},{inference_time_ms:.2f}\n")
 
             # Optional tiny sleep to keep console readable.
             time.sleep(0.05)
