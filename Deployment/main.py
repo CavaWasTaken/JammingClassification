@@ -116,7 +116,7 @@ def main():
 
             # normalize features using same method as offline dataset generation by loading pkl scaler and applying transform
 
-            features_scaled = scaler.transform(features)
+            features_scaled = scaler.transform([features])[0]
 
             # print(f'\n--- Number of features after scaling: {len(features_scaled)}')
             # print(f"\n--- Scaled features:\n{features_scaled}")
