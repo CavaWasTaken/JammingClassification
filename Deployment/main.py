@@ -6,6 +6,8 @@ import time
 import onnxruntime as ort
 from sdr_stream import SdrStream
 from signal_analysis_live import SignalAnalysisLive
+import warnings
+warnings.filterwarnings('ignore', message='X does not have valid feature names')
 
 def convert_float_to_int8(signal_float):
     """Convert float signal to int8 using the same normalization as dataset generation"""
@@ -15,16 +17,6 @@ def convert_float_to_int8(signal_float):
         return np.zeros_like(signal_float, dtype=np.int8)
     signal_int8 = ((signal_float - signal_min) / (signal_max - signal_min) * 255 - 128).astype(np.int8)
     return signal_int8
-
-def _resize_2d_nearest(array_2d, target_h, target_w):
-    """Simple nearest-neighbor resize for 2D arrays using NumPy indexing."""
-    src_h, src_w = array_2d.shape
-    if src_h == target_h and src_w == target_w:
-        return array_2d
-
-    row_idx = np.clip(np.round(np.linspace(0, src_h - 1, target_h)).astype(np.int64), 0, src_h - 1)
-    col_idx = np.clip(np.round(np.linspace(0, src_w - 1, target_w)).astype(np.int64), 0, src_w - 1)
-    return array_2d[row_idx][:, col_idx]
 
 def main():
     onnx_file_path = "./Deployment/export/jamming_model.onnx"
