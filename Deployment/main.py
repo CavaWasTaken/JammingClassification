@@ -46,7 +46,7 @@ def main():
     # create a csv file where to write predictions with columns: timestamp, pred_label, confidence, energy
     csv_path = "./Deployment/predictions.csv"
     with open(csv_path, "w") as f:
-        f.write("timestamp,pred_label,confidence,energy,processing_time_ms,inference_time_ms\n")
+        f.write("timestamp,pred_label,confidence,probability,energy,spectrogram_time_ms,int8_conversion_time_ms,feature_extraction_time_ms,feature_scaling_time_ms,processing_time,inference_time_ms\n")
 
     scaler_path = "./Deployment/export/scaler_model.pkl"
     if not os.path.exists(scaler_path):
@@ -83,21 +83,36 @@ def main():
             # for computing the spectogrm use iq_samples with 1000 samples to match the dataset parameters
             iq_samples_ = iq_samples[:1000]
 
+            start_time_spectrogram = time.perf_counter()
+
             # Compute spectrogram
             spec, freq, t = signal_analysis_live_object.compute_spectrogram(iq_samples_)
-            
+
+            end_time_spectrogram = time.perf_counter()
+            spectrogram_time_ms = (end_time_spectrogram - start_time_spectrogram) * 1000
+
             # show the spectrogram shape and value range for debugging
             # print(f"\n--- Spectrogram shape: {spec.shape}, value range: [{spec.min()}, {spec.max()}]")
             # print(f"\n--- Frequency bins: {len(freq)}, Time bins: {len(t)}")
             # print(f"\n--- Frequency range: [{freq.min()}, {freq.max()}], Time range: [{t.min()}, {t.max()}]")
 
+            start_time_int8_conversion = time.perf_counter()
+
             # convert the spectogram to int8
             spec_int8 = convert_float_to_int8(spec)
 
+            end_time_int8_conversion = time.perf_counter()
+            int8_conversion_time_ms = (end_time_int8_conversion - start_time_int8_conversion) * 1000
+
             # print(f"\n--- Spectrogram int8 shape: {spec_int8.shape}, value range: [{spec_int8.min()}, {spec_int8.max()}]")
+
+            start_time_feature_extraction = time.perf_counter()
 
             # Extract features directly from signal
             features = signal_analysis_live_object.extract_features_direct(iq_samples)
+
+            end_time_feature_extraction = time.perf_counter()
+            feature_extraction_time_ms = (end_time_feature_extraction - start_time_feature_extraction) * 1000
 
             # print(f'\n--- Number of features extracted: {len(features)}')
             # print(f"\n--- Extracted features:\n{features}")
@@ -108,7 +123,12 @@ def main():
 
             # normalize features using same method as offline dataset generation by loading pkl scaler and applying transform
 
+            start_time_feature_scaling = time.perf_counter()
+
             features_scaled = scaler.transform([features])[0]
+
+            end_time_feature_scaling = time.perf_counter()
+            feature_scaling_time_ms = (end_time_feature_scaling - start_time_feature_scaling) * 1000
 
             # print(f'\n--- Number of features after scaling: {len(features_scaled)}')
             # print(f"\n--- Scaled features:\n{features_scaled}")
@@ -149,10 +169,12 @@ def main():
             # print(f"\n--- Energy: {energy}")
             # print(f"\n--- Penultimate shape: {penultimate.shape}")
 
+            probability = np.max(logits[0]) / np.sum(logits[0]) 
+
             csv_path = "./Deployment/predictions.csv"
             timestamp = time.time()
             with open(csv_path, "a") as f:
-                f.write(f"{timestamp},{class_predicted_name},{np.max(logits[0]):.4f},{energy[0]:.4f},{processing_time_ms:.2f},{inference_time_ms:.2f}\n")
+                f.write(f"{timestamp},{class_predicted_name},{np.max(logits[0]):.4f},{probability:.4f},{energy[0]:.4f},{spectrogram_time_ms:.2f},{int8_conversion_time_ms:.2f},{feature_extraction_time_ms:.2f},{feature_scaling_time_ms:.2f},{processing_time_ms:.2f},{inference_time_ms:.2f}\n")
 
             # Optional tiny sleep to keep console readable.
             time.sleep(0.05)
