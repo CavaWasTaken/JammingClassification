@@ -1,0 +1,14 @@
+{
+  "hivemq": {
+    "host": "906956ba2ce74645a5c0b75233bdb1b7.s1.eu.hivemq.cloud", 
+    "port_wss": 8884,
+    "port_tcp": 8883,
+    "username": "nmon_group_G",
+    "password": "nMON1234"
+  },
+  "topics": {
+    "alerts": "NMON/alert",
+    "status": "NMON/status"
+  },
+  "plate": "AB123CD"
+}
