@@ -9,8 +9,73 @@ from signal_analysis_live import SignalAnalysisLive
 import warnings
 import paho.mqtt.client as mqtt
 import ssl
+import threading
+import serial
+import serial.tools.list_ports
+from pyubx2 import UBXReader, UBX_PROTOCOL
 
 warnings.filterwarnings('ignore', message='X does not have valid feature names')
+
+
+
+class UbloxGpsThread(threading.Thread): 
+    # con questa classe CHAT mi dice che il file ubx_position_parser.py è troppo pesante 
+    # per essere eseguito in tempo reale, quindi ho integrato direttamente la lettura del
+    #  GPS in questo thread ottimizzato, che si occupa solo di leggere i dati GPS e
+    #  aggiornare le coordinate in background. 
+    # In questo modo evitiamo il sovraccarico di importare un modulo esterno e possiamo 
+    # gestire tutto internamente in modo più efficiente.
+    def __init__(self):
+        super().__init__()
+        # Default coordinates (Piazza Castello, Torino) in case GPS is not available
+        self.latitude = 45.0621
+        self.longitude = 7.6622
+        self.fix_type = 0
+        self.running = True
+        self.port = self.find_ublox_port()
+
+    def find_ublox_port(self):
+        """Automatically searches for the port of the u-blox module"""
+        ports = serial.tools.list_ports.comports()
+        for port in ports:
+            desc = port.description or ""
+            manuf = port.manufacturer or ""
+            if "u-blox" in desc or "u-blox" in manuf:
+                return port.device
+            if (port.vid, port.pid) in [(0x1546, 0x01A7)]:
+                return port.device
+        return None
+
+    def run(self):
+        """This is the loop that runs in the background"""
+        if not self.port:
+            print("GPS: u-blox module not found. Fixed coordinates will be used.")
+            return
+
+        print(f"GPS: Connected to the {self.port} port. Background reading started.")
+        try:
+            with serial.Serial(self.port, baudrate=230400, timeout=1) as ser:
+                ubr = UBXReader(ser, protfilter=UBX_PROTOCOL)
+                while self.running:
+                    raw, parsed = ubr.read()
+                    if parsed is None:
+                        continue
+                    
+                    # If the message is NAV-PVT, we update the position variables
+                    if parsed.identity == "NAV-PVT":
+                        self.fix_type = getattr(parsed, "fixType", 0)
+                        
+                        # We update the coordinates only if we have a valid fix (2D, 3D or GNSS+DR)
+                        if self.fix_type >= 2:
+                            self.latitude = getattr(parsed, "lat", self.latitude)
+                            self.longitude = getattr(parsed, "lon", self.longitude)
+                            
+        except Exception as e:
+            print(f"Error in GPS thread: {e}")
+
+    def stop(self):
+        """Stop the thread cleanly"""
+        self.running = False
 
 def convert_float_to_int8(signal_float):
     """Convert float signal to int8 using the same normalization as dataset generation"""
@@ -26,9 +91,30 @@ def check_file_exists(filepath, description):
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"Error: {description} not found at path: {filepath}")
 
+STATE_FILE = "./Deployment/export/last_known_location.json"
+
+def load_last_location(default_lat=45.0621, default_lon=7.6622):
+    """Load the last known location from the local file."""
+    try:
+        if os.path.exists(STATE_FILE):
+            with open(STATE_FILE, "r") as f:
+                data = json.load(f)
+                return data.get("latitude", default_lat), data.get("longitude", default_lon)
+    except Exception as e:
+        print(f"Failed to load last location: {e}")
+    return default_lat, default_lon
+
+def save_last_location(lat, lon):
+    """Save the last known location to the local file."""
+    try:
+        with open(STATE_FILE, "w") as f:
+            json.dump({"latitude": lat, "longitude": lon}, f)
+    except Exception as e:
+        print(f"Failed to save last location: {e}")
+
 def main():
     # --- PRE-FLIGHT CHECKS ---
-    config_path = 'config.json'
+    config_path = './Deployment/export/config.json'
     onnx_file_path = "./Deployment/export/jamming_model.onnx"
     class_names_path = "./Deployment/export/class_names.json"
     scaler_path = "./Deployment/export/scaler_model.pkl"
@@ -38,8 +124,13 @@ def main():
     check_file_exists(class_names_path, "Class names JSON file")
     check_file_exists(scaler_path, "Scaler model file")
 
-    LATITUDE = 45.0621
-    LONGITUDE = 7.6622
+    # --- START THE GPS THREAD ---
+    gps_tracker = UbloxGpsThread()
+    gps_tracker.daemon = True # So the thread closes itself when you close the programa
+    gps_tracker.start()
+
+    last_clean_latitude, last_clean_longitude = load_last_location()
+    print(f"--- Initial position loaded: Lat {last_clean_latitude}, Lon {last_clean_longitude}")
 
     # --- LOAD CONFIG & STATIC DATA  ---
     with open(config_path, 'r') as f:
@@ -72,7 +163,7 @@ def main():
                 "truckId": TRUCK_ID,
                 "status": "OFFLINE",
                 "timestamp": time.time(),
-                "location": {"latitude": LATITUDE, "longitude": LONGITUDE} 
+                "location": {"latitude": last_clean_latitude, "longitude": last_clean_longitude} 
             }),
         qos=1,
         retain=True
@@ -113,7 +204,7 @@ def main():
     
     if not sdr.flowgraph_started.is_set():
         print("ERROR: SDR streaming thread did not start!")
-        return # Esce se l'SDR non parte
+        return # Exits if the SDR doesn't start
     else:
         print("--- SDR streaming thread confirmed started")
 
@@ -122,6 +213,9 @@ def main():
     
     f_csv = open(csv_path, "w")
     f_csv.write("timestamp,pred_label,confidence,probability,energy,spectrogram_time_ms,int8_conversion_time_ms,feature_extraction_time_ms,feature_scaling_time_ms,processing_time,inference_time_ms\n")
+
+    STATUS_INTERVAL = 10 # Keep-alive interval for status updates (in seconds)
+    last_status_time = time.time()
 
     try:
         iteration = 0
@@ -164,8 +258,6 @@ def main():
 
                 processing_time_ms = (time.perf_counter() - start_time_processing) * 1000
 
-                print("--- Pre-Processing completed ---")
-
                 # --- 5. INFERENCE ---
                 inputs = {
                     'spectrogram': spec_int8[np.newaxis, np.newaxis, :, :].astype(np.float32),
@@ -184,7 +276,12 @@ def main():
                 predicted_class = np.argmax(logits[0])
                 class_predicted_name = class_names[predicted_class] if predicted_class < len(class_names) else "Unknown"
                 
-                if class_predicted_name not in ["CLEAN", "Unknown"]:
+                if class_predicted_name == "CLEAN":
+                    last_clean_latitude = gps_tracker.latitude
+                    last_clean_longitude = gps_tracker.longitude
+                                
+                elif class_predicted_name != "Unknown":
+                    # JAMMING DETECTED
                     parts = class_predicted_name.split("_")
                     jamming_type = parts[0] if len(parts) > 0 else "Unknown"
                     jamming_level = parts[1] if len(parts) > 1 else "Unknown"
@@ -194,11 +291,14 @@ def main():
                         "type": jamming_type,
                         "level": jamming_level,
                         "timestamp": time.time(),
-                        "location": {"latitude": LATITUDE, "longitude": LONGITUDE} 
+                        "location": {
+                            "latitude": last_clean_latitude,   
+                            "longitude": last_clean_longitude  
+                        } 
                     }
                 
                     client.publish(topic_alert, json.dumps(payload))
-                    print(f"- JAMMING DETECTED {class_predicted_name} - Alert sent to Cloud")
+                    print(f"- JAMMING DETECTED ({jamming_type}) - Alert sent to Cloud at Last Known Good Location (Lat: {last_clean_latitude}, Lon: {last_clean_longitude})")
 
                 # Added 1e-9 to avoid division by zero in case of very low confidence
                 probability = np.max(logits[0]) / (np.sum(logits[0]) + 1e-9)
@@ -211,6 +311,24 @@ def main():
                 if iteration % 20 == 0:
                     f_csv.flush()
 
+                # --- 8. STATUS UPDATE ---
+                current_time = time.time()
+                if current_time - last_status_time >= STATUS_INTERVAL:
+                    payload_status = {
+                        "truckId": TRUCK_ID,
+                        "status": "ACTIVE",
+                        "timestamp": current_time,
+                        "location": {
+                            "latitude": last_clean_latitude, 
+                            "longitude": last_clean_longitude
+                        }
+                    }
+                    client.publish(topic_status, json.dumps(payload_status))
+                    print(f"- STATUS sent (Lat: {last_clean_latitude}, Lon: {last_clean_longitude})")
+
+                    save_last_location(last_clean_latitude, last_clean_longitude)
+                    last_status_time = current_time
+
                 time.sleep(0.05)
             
             except Exception as e:
@@ -219,10 +337,12 @@ def main():
     except KeyboardInterrupt:
         print("Stopping signal acquisition...")
     finally:
+        save_last_location(last_clean_latitude, last_clean_longitude)
         sdr.stop_stream()
         f_csv.close() 
         client.loop_stop()
         client.disconnect()
+        gps_tracker.stop()
 
 
 if __name__ == "__main__":
