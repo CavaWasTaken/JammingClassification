@@ -4,6 +4,7 @@ from scipy.stats import skew, kurtosis
 import matplotlib.mlab as mlab
 # matplotlib.use('agg')
 import math
+import torch
 
 class SignalAnalysisLive:
     fs: int
@@ -38,6 +39,42 @@ class SignalAnalysisLive:
                                     window=win,
                                     noverlap=number_overlap)
         return spec, freq, t
+    
+    def compute_spectrogram_general(self, raw_signal_100us, nfft=128, window=None, overlap_percentage=0.999):
+        """
+        Universal Spectrogram: Use GPU if available, CPU otherwise.
+        """
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        if overlap_percentage is not None:
+            number_overlap = math.floor(nfft * overlap_percentage)
+        else:
+            number_overlap = 0
+            
+        hop_length = nfft - number_overlap
+
+        signal_tensor = torch.tensor(raw_signal_100us, dtype=torch.float32, device=device)
+
+        if window == 'kaiser' or window is None:
+            win_np = signal_sci.get_window(('kaiser', 5.0), nfft)
+        else:
+            win_np = signal_sci.get_window(window, nfft)
+            
+        win_tensor = torch.tensor(win_np, dtype=torch.float32, device=device)
+
+        stft_result = torch.stft(
+            signal_tensor, 
+            n_fft=nfft, 
+            hop_length=hop_length, 
+            win_length=nfft, 
+            window=win_tensor,
+            center=False,
+            return_complex=True
+        )
+        
+        spec = torch.abs(stft_result).cpu().numpy()
+        
+        return spec, None, None
     
     def extract_features_direct(self, raw_signal_200us):
         """

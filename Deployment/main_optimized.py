@@ -182,7 +182,24 @@ def main():
 
     # --- LOAD MODELS ---
     print("--- Loading Models...")
-    sess = ort.InferenceSession(onnx_file_path)
+    # EXPLICITLY tell ONNX to use the Jetson Nano's GPU
+    providers = [
+        ('TensorrtExecutionProvider', {
+            'device_id': 0,
+            'trt_max_workspace_size': 2147483648,
+            'trt_fp16_enable': True,
+        }),
+        ('CUDAExecutionProvider', {
+            'device_id': 0,
+        })
+    ]
+    
+    try:
+        sess = ort.InferenceSession(onnx_file_path, providers=providers)
+        print("ONNX successfully loaded with GPU acceleration.")
+    except Exception as e:
+        print(f"Failed to load GPU providers, falling back to CPU. Error: {e}")
+        sess = ort.InferenceSession(onnx_file_path) # Fallback to CPU
 
     try:
         import joblib
@@ -239,6 +256,7 @@ def main():
                 # --- 1. SPECTROGRAM ---
                 start_time_spectrogram = time.perf_counter()
                 spec, freq, t = signal_analysis_live_object.compute_spectrogram(iq_samples_)
+                # spec, _, _ = signal_analysis_live_object.compute_spectrogram_general(iq_samples_) # Compute spectrogram using GPU if available, CPU otherwise
                 spectrogram_time_ms = (time.perf_counter() - start_time_spectrogram) * 1000
 
                 # --- 2. INT8 CONVERSION ---
