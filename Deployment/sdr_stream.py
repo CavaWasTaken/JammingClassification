@@ -65,7 +65,9 @@ class SdrStream(SdrBase):
         num_samples = int(window_chunk * self.samp_rate)
 
         # vector_sink_c already provides complex IQ samples.
-        iq_data = np.asarray(self.iq_buffer[-1], dtype=np.complex64)[-num_samples:]
+        # iq_data = np.asarray(self.iq_buffer[-1], dtype=np.complex64)[-num_samples:]
+        #faster according to Gemini
+        iq_data = np.asarray(self.iq_buffer[-1][-num_samples:], dtype=np.complex64)
 
         if np.array_equal(iq_data, self.iq):  # True
             print(f'--- IQ data of two streaming are equal.')
