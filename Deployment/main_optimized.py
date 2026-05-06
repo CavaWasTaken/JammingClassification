@@ -28,8 +28,8 @@ class UbloxGpsThread(threading.Thread):
     def __init__(self):
         super().__init__()
         # Default coordinates (Piazza Castello, Torino) in case GPS is not available
-        self.latitude = 45.0621
-        self.longitude = 7.6622
+        self.latitude = 35.0621
+        self.longitude = 5.6622
         self.fix_type = 0
         self.running = True
         self.port = self.find_ublox_port()
@@ -93,7 +93,7 @@ def check_file_exists(filepath, description):
 
 STATE_FILE = "./Deployment/export/last_known_location.json"
 
-def load_last_location(default_lat=45.0621, default_lon=7.6622):
+def load_last_location(default_lat=35.0621, default_lon=5.6622):
     """Load the last known location from the local file."""
     try:
         if os.path.exists(STATE_FILE):
@@ -326,7 +326,7 @@ def main():
                 
                 # Facciamo il flush ogni tanto per assicurarci che i dati vengano scritti su disco, 
                 # pur mantenendo le performance (es. ogni 20 iterazioni)
-                if iteration % 20 == 0:
+                if iteration % 5 == 0:
                     f_csv.flush()
 
                 # --- 8. STATUS UPDATE ---
@@ -355,12 +355,28 @@ def main():
     except KeyboardInterrupt:
         print("Stopping signal acquisition...")
     finally:
+        #     # --- SEND OFFLINE STATUS MANUALLY ---
+        # print("Sending OFFLINE status before disconnecting...")
+        # payload_offline = {
+        #     "truckId": TRUCK_ID,
+        #     "status": "OFFLINE",
+        #     "timestamp": time.time(),
+        #     "location": {
+        #         "latitude": last_clean_latitude, 
+        #         "longitude": last_clean_longitude
+        #     }
+        # }
+        # client.publish(topic_status, json.dumps(payload_offline), qos=1, retain=True)
+        
+        # # Wait a bit to ensure message is sent
+        # time.sleep(0.5)
         save_last_location(last_clean_latitude, last_clean_longitude)
+        client.loop_stop()
+        # client.disconnect()
         sdr.stop_stream()
         f_csv.close() 
-        client.loop_stop()
-        client.disconnect()
         gps_tracker.stop()
+        
 
 
 if __name__ == "__main__":

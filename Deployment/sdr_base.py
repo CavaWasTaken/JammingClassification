@@ -58,7 +58,7 @@ class SdrBase(gr.top_block):
         self.osmosdr_source_0.set_bb_gain(0, 0)
         self.osmosdr_source_0.set_antenna('', 0)
         self.osmosdr_source_0.set_bandwidth(samp_rate, 0)
-        self.osmosdr_source_0.set_bias_tee(True, 0) #bias tee on for power supply to antenna, if needed. Set to False if not required.
+        #self.osmosdr_source_0.set_bias_tee(True, 0) #bias tee on for power supply to antenna, if needed. Set to False if not required.
         self.blocks_vector_sink_x_0 = blocks.vector_sink_c(1, 1024)
         self.blocks_correctiq_0 = blocks.correctiq()
 

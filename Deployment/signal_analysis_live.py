@@ -40,7 +40,7 @@ class SignalAnalysisLive:
                                     noverlap=number_overlap)
         return spec, freq, t
     
-    def compute_spectrogram_general(self, raw_signal_100us, nfft=128, window=None, overlap_percentage=0.999):
+    def compute_spectrogram_general(self, raw_signal_100us, nfft=128, window=None, overlap_percentage=0.999): 
         """
         Universal Spectrogram: Use GPU if available, CPU otherwise.
         """
