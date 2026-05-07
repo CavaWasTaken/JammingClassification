@@ -229,13 +229,17 @@ def main():
     csv_path = "./Deployment/predictions.csv"
     
     f_csv = open(csv_path, "w")
-    f_csv.write("timestamp,pred_label,confidence,probability,energy,spectrogram_time_ms,int8_conversion_time_ms,feature_extraction_time_ms,feature_scaling_time_ms,processing_time,inference_time_ms\n")
+    f_csv.write("index,timestamp,pred_label,confidence,probability,energy,spectrogram_time_ms,int8_conversion_time_ms,feature_extraction_time_ms,feature_scaling_time_ms,processing_time,inference_time_ms\n")
 
     STATUS_INTERVAL = 10 # Keep-alive interval for status updates (in seconds)
     last_status_time = time.time()
 
     try:
         iteration = 0
+        # --- DEBOUNCE LOGIC FOR ALERT ---
+        consecutive_jamming_count = 0
+        last_jamming_type = None
+        ALERT_THRESHOLD = 3  # Number of consecutive measurements required
         while True:
             iteration += 1
             
@@ -298,32 +302,44 @@ def main():
                 if class_predicted_name == "CLEAN":
                     last_clean_latitude = gps_tracker.latitude
                     last_clean_longitude = gps_tracker.longitude
+                    # Reset the counter if the signal becomes clear again
+                    consecutive_jamming_count = 0
+                    last_jamming_type = None
                                 
                 elif class_predicted_name != "Unknown":
-                    # JAMMING DETECTED
-                    parts = class_predicted_name.split("_")
-                    jamming_type = parts[0] if len(parts) > 0 else "Unknown"
-                    jamming_level = parts[1] if len(parts) > 1 else "Unknown"
+                    # Confirmation logic: must be the SAME type consecutively
+                    if class_predicted_name == last_jamming_type:
+                        consecutive_jamming_count += 1
+                    else:
+                        last_jamming_type = class_predicted_name
+                        consecutive_jamming_count = 1
                     
-                    payload = {
-                        "truckId": TRUCK_ID,
-                        "type": jamming_type,
-                        "level": jamming_level,
-                        "timestamp": time.time(),
-                        "location": {
-                            "latitude": last_clean_latitude,   
-                            "longitude": last_clean_longitude  
-                        } 
-                    }
-                
-                    client.publish(topic_alert, json.dumps(payload))
-                    print(f"- JAMMING DETECTED ({jamming_type}) - Alert sent to Cloud at Last Known Good Location (Lat: {last_clean_latitude}, Lon: {last_clean_longitude})")
+                    # Sending alert only when the threshold is reached
+                    if consecutive_jamming_count == ALERT_THRESHOLD:
+                        # JAMMING DETECTED
+                        parts = class_predicted_name.split("_")
+                        jamming_type = parts[0] if len(parts) > 0 else "Unknown"
+                        jamming_level = parts[1] if len(parts) > 1 else "Unknown"
+
+                        payload = {
+                            "truckId": TRUCK_ID,
+                            "type": jamming_type,
+                            "level": jamming_level,
+                            "timestamp": time.time(),
+                            "location": {
+                                "latitude": last_clean_latitude,
+                                "longitude": last_clean_longitude
+                            }
+                        }
+                    
+                        client.publish(topic_alert, json.dumps(payload))
+                        print(f"- JAMMING DETECTED ({jamming_type}) - Alert sent to Cloud at Last Known Good Location (Lat: {last_clean_latitude}, Lon: {last_clean_longitude})")
 
                 # Added 1e-9 to avoid division by zero in case of very low confidence
                 probability = np.max(logits[0]) / (np.sum(logits[0]) + 1e-9)
 
                 # --- 7. CSV WRITING ---
-                f_csv.write(f"{time.time()},{class_predicted_name},{np.max(logits[0]):.4f},{probability:.4f},{energy[0]:.4f},{spectrogram_time_ms:.2f},{int8_conversion_time_ms:.2f},{feature_extraction_time_ms:.2f},{feature_scaling_time_ms:.2f},{processing_time_ms:.2f},{inference_time_ms:.2f}\n")
+                f_csv.write(f"{iteration},{time.time()},{class_predicted_name},{np.max(logits[0]):.4f},{probability:.4f},{energy[0]:.4f},{spectrogram_time_ms:.2f},{int8_conversion_time_ms:.2f},{feature_extraction_time_ms:.2f},{feature_scaling_time_ms:.2f},{processing_time_ms:.2f},{inference_time_ms:.2f}\n")
                 
                 # Facciamo il flush ogni tanto per assicurarci che i dati vengano scritti su disco, 
                 # pur mantenendo le performance (es. ogni 20 iterazioni)
