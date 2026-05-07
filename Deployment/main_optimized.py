@@ -255,8 +255,8 @@ def main():
 
                 # --- 1. SPECTROGRAM ---
                 start_time_spectrogram = time.perf_counter()
-                spec, freq, t = signal_analysis_live_object.compute_spectrogram(iq_samples_)
-                # spec, _, _ = signal_analysis_live_object.compute_spectrogram_general(iq_samples_) # Compute spectrogram using GPU if available, CPU otherwise
+                # spec, freq, t = signal_analysis_live_object.compute_spectrogram(iq_samples_)
+                spec, _, _ = signal_analysis_live_object.compute_spectrogram_general(iq_samples_) # Compute spectrogram using GPU if available, CPU otherwise
                 spectrogram_time_ms = (time.perf_counter() - start_time_spectrogram) * 1000
 
                 # --- 2. INT8 CONVERSION ---
@@ -266,7 +266,8 @@ def main():
 
                 # --- 3. FEATURE EXTRACTION ---
                 start_time_feature_extraction = time.perf_counter()
-                features = signal_analysis_live_object.extract_features_direct(iq_samples)
+                # features = signal_analysis_live_object.extract_features_direct(iq_samples)
+                features = signal_analysis_live_object.extract_features_direct_optimized(iq_samples) #faster
                 feature_extraction_time_ms = (time.perf_counter() - start_time_feature_extraction) * 1000
 
                 # --- 4. FEATURE SCALING ---
