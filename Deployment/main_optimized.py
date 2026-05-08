@@ -182,7 +182,10 @@ def main():
 
     # --- LOAD MODELS ---
     print("--- Loading Models...")
-    # EXPLICITLY tell ONNX to use the Jetson Nano's GPU
+    
+    # Let's check what is actually installed/available on the system
+    available_providers = ort.get_available_providers()
+    
     providers = [
         ('TensorrtExecutionProvider', {
             'device_id': 0,
@@ -194,12 +197,13 @@ def main():
         })
     ]
     
-    try:
+    
+    if 'TensorrtExecutionProvider' in available_providers:
         sess = ort.InferenceSession(onnx_file_path, providers=providers)
         print("ONNX successfully loaded with GPU acceleration.")
-    except Exception as e:
-        print(f"Failed to load GPU providers, falling back to CPU. Error: {e}")
-        sess = ort.InferenceSession(onnx_file_path) # Fallback to CPU
+    else:
+        print("GPU providers not found, falling back to CPU.")
+        sess = ort.InferenceSession(onnx_file_path, providers=['CPUExecutionProvider'])
 
     try:
         import joblib
