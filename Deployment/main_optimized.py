@@ -349,8 +349,8 @@ def main():
                 
                 # Facciamo il flush ogni tanto per assicurarci che i dati vengano scritti su disco, 
                 # pur mantenendo le performance (es. ogni 20 iterazioni)
-                if iteration % 5 == 0:
-                    f_csv.flush()
+                # if iteration % 5 == 0:
+                #     f_csv.flush()
 
                 # --- 8. STATUS UPDATE ---
                 current_time = time.time()
