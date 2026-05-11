@@ -10,5 +10,7 @@
     "alerts": "NMON/alert",
     "status": "NMON/status"
   },
-  "plate": "AB123CD"
+  "plate": "AB123CD",
+  "status_update_interval_seconds": 10,
+  "number_of_consecutive_alerts": 3
 }

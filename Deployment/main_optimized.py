@@ -27,9 +27,8 @@ class UbloxGpsThread(threading.Thread):
     # gestire tutto internamente in modo più efficiente.
     def __init__(self):
         super().__init__()
-        # Default coordinates (Piazza Castello, Torino) in case GPS is not available
-        self.latitude = 35.0621
-        self.longitude = 5.6622
+        self.latitude = 41.9
+        self.longitude = 12.5
         self.fix_type = 0
         self.running = True
         self.port = self.find_ublox_port()
@@ -93,7 +92,7 @@ def check_file_exists(filepath, description):
 
 STATE_FILE = "./Deployment/export/last_known_location.json"
 
-def load_last_location(default_lat=35.0621, default_lon=5.6622):
+def load_last_location(default_lat=41.9, default_lon=12.5):
     """Load the last known location from the local file."""
     try:
         if os.path.exists(STATE_FILE):
@@ -235,15 +234,18 @@ def main():
     f_csv = open(csv_path, "w")
     f_csv.write("index,timestamp,pred_label,confidence,probability,energy,spectrogram_time_ms,int8_conversion_time_ms,feature_extraction_time_ms,feature_scaling_time_ms,processing_time,inference_time_ms\n")
 
-    STATUS_INTERVAL = 10 # Keep-alive interval for status updates (in seconds)
+    # STATUS_INTERVAL = 10 # Keep-alive interval for status updates (in seconds)
+    STATUS_INTERVAL = config["status_update_interval_seconds"]
     last_status_time = time.time()
+    ALERT_THRESHOLD = config["number_of_consecutive_alerts"]
 
     try:
         iteration = 0
         # --- DEBOUNCE LOGIC FOR ALERT ---
         consecutive_jamming_count = 0
         last_jamming_type = None
-        ALERT_THRESHOLD = 3  # Number of consecutive measurements required
+        # ALERT_THRESHOLD = 3  # Number of consecutive measurements required
+        
         while True:
             iteration += 1
             
