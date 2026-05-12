@@ -19,12 +19,6 @@ warnings.filterwarnings('ignore', message='X does not have valid feature names')
 
 
 class UbloxGpsThread(threading.Thread): 
-    # con questa classe CHAT mi dice che il file ubx_position_parser.py è troppo pesante 
-    # per essere eseguito in tempo reale, quindi ho integrato direttamente la lettura del
-    #  GPS in questo thread ottimizzato, che si occupa solo di leggere i dati GPS e
-    #  aggiornare le coordinate in background. 
-    # In questo modo evitiamo il sovraccarico di importare un modulo esterno e possiamo 
-    # gestire tutto internamente in modo più efficiente.
     def __init__(self):
         super().__init__()
         self.latitude = 41.9
@@ -160,9 +154,7 @@ def main():
         topic=topic_status,
         payload=json.dumps({
                 "truckId": TRUCK_ID,
-                "status": "OFFLINE",
-                "timestamp": time.time(),
-                "location": {"latitude": last_clean_latitude, "longitude": last_clean_longitude} 
+                "status": "OFFLINE"
             }),
         qos=1,
         retain=True
@@ -231,8 +223,8 @@ def main():
     # --- SETUP CSV ---
     csv_path = "./Deployment/predictions.csv"
     
-    f_csv = open(csv_path, "w")
-    f_csv.write("index,timestamp,pred_label,confidence,probability,energy,spectrogram_time_ms,int8_conversion_time_ms,feature_extraction_time_ms,feature_scaling_time_ms,processing_time,inference_time_ms\n")
+    with open(csv_path, "w") as f:
+        f.write("index,timestamp,pred_label,confidence,probability,energy,spectrogram_time_ms,int8_conversion_time_ms,feature_extraction_time_ms,feature_scaling_time_ms,processing_time,inference_time_ms\n")
 
     # STATUS_INTERVAL = 10 # Keep-alive interval for status updates (in seconds)
     STATUS_INTERVAL = config["status_update_interval_seconds"]
@@ -345,12 +337,8 @@ def main():
                 probability = np.max(logits[0]) / (np.sum(logits[0]) + 1e-9)
 
                 # --- 7. CSV WRITING ---
-                f_csv.write(f"{iteration},{time.time()},{class_predicted_name},{np.max(logits[0]):.4f},{probability:.4f},{energy[0]:.4f},{spectrogram_time_ms:.2f},{int8_conversion_time_ms:.2f},{feature_extraction_time_ms:.2f},{feature_scaling_time_ms:.2f},{processing_time_ms:.2f},{inference_time_ms:.2f}\n")
-                
-                # Facciamo il flush ogni tanto per assicurarci che i dati vengano scritti su disco, 
-                # pur mantenendo le performance (es. ogni 20 iterazioni)
-                # if iteration % 5 == 0:
-                #     f_csv.flush()
+                with open(csv_path, "a") as f:
+                    f.write(f"{iteration},{time.time()},{class_predicted_name},{np.max(logits[0]):.4f},{probability:.4f},{energy[0]:.4f},{spectrogram_time_ms:.2f},{int8_conversion_time_ms:.2f},{feature_extraction_time_ms:.2f},{feature_scaling_time_ms:.2f},{processing_time_ms:.2f},{inference_time_ms:.2f}\n")
 
                 # --- 8. STATUS UPDATE ---
                 current_time = time.time()
@@ -360,7 +348,7 @@ def main():
                         "status": "ACTIVE",
                         "timestamp": current_time,
                         "location": {
-                            "latitude": last_clean_latitude, 
+                            "latitude": last_clean_latitude,
                             "longitude": last_clean_longitude
                         }
                     }
@@ -378,26 +366,25 @@ def main():
     except KeyboardInterrupt:
         print("Stopping signal acquisition...")
     finally:
-        #     # --- SEND OFFLINE STATUS MANUALLY ---
-        # print("Sending OFFLINE status before disconnecting...")
-        # payload_offline = {
-        #     "truckId": TRUCK_ID,
-        #     "status": "OFFLINE",
-        #     "timestamp": time.time(),
-        #     "location": {
-        #         "latitude": last_clean_latitude, 
-        #         "longitude": last_clean_longitude
-        #     }
-        # }
-        # client.publish(topic_status, json.dumps(payload_offline), qos=1, retain=True)
+        save_last_location(last_clean_latitude, last_clean_longitude)
+            # --- SEND OFFLINE STATUS MANUALLY ---
+        print("Sending OFFLINE status before disconnecting...")
+        payload_offline = {
+            "truckId": TRUCK_ID,
+            "status": "OFFLINE",
+            "timestamp": time.time(),
+            "location": {
+                "latitude": last_clean_latitude,
+                "longitude": last_clean_longitude
+            }
+        }
+        client.publish(topic_status, json.dumps(payload_offline), qos=1, retain=True)
         
         # # Wait a bit to ensure message is sent
-        # time.sleep(0.5)
-        save_last_location(last_clean_latitude, last_clean_longitude)
+        time.sleep(0.5)
+        client.disconnect()
         client.loop_stop()
-        # client.disconnect()
         sdr.stop_stream()
-        f_csv.close() 
         gps_tracker.stop()
         
 
