@@ -19,8 +19,8 @@ def convert_float_to_int8(signal_float):
     return signal_int8
 
 def main():
-    onnx_file_path = "./Deployment/export/jamming_model.onnx"
-    class_names_path = "./Deployment/export/class_names.json"
+    onnx_file_path = "./export/jamming_model.onnx"
+    class_names_path = "./export/class_names.json"
 
     sess = ort.InferenceSession(onnx_file_path)
 
@@ -44,11 +44,11 @@ def main():
         print("--- SDR streaming thread confirmed started")
 
     # create a csv file where to write predictions with columns: timestamp, pred_label, confidence, energy
-    csv_path = "./Deployment/predictions.csv"
+    csv_path = "./predictions_main.csv"
     with open(csv_path, "w") as f:
         f.write("timestamp,pred_label,confidence,probability,energy,spectrogram_time_ms,int8_conversion_time_ms,feature_extraction_time_ms,feature_scaling_time_ms,processing_time,inference_time_ms\n")
 
-    scaler_path = "./Deployment/export/scaler_model.pkl"
+    scaler_path = "./export/scaler_model.pkl"
     if not os.path.exists(scaler_path):
         raise FileNotFoundError(f"Feature scaler not found: {scaler_path}")
     
@@ -164,6 +164,7 @@ def main():
 
             predicted_class = np.argmax(logits[0])
             class_predicted_name = class_names[predicted_class] if predicted_class < len(class_names) else "Unknown"
+            print(f"--- Chunk is {class_predicted_name}")
             # print(f"\n--- Predicted class: {class_predicted_name} | Inference time: {inference_time_ms:.2f} ms | FPS: {fps:.1f}")
             # print(f"\n--- Logits: {logits}")
             # print(f"\n--- Energy: {energy}")
@@ -171,7 +172,7 @@ def main():
 
             probability = np.max(logits[0]) / np.sum(logits[0]) 
 
-            csv_path = "./Deployment/predictions.csv"
+            csv_path = "./predictions_main.csv"
             timestamp = time.time()
             with open(csv_path, "a") as f:
                 f.write(f"{timestamp},{class_predicted_name},{np.max(logits[0]):.4f},{probability:.4f},{energy[0]:.4f},{spectrogram_time_ms:.2f},{int8_conversion_time_ms:.2f},{feature_extraction_time_ms:.2f},{feature_scaling_time_ms:.2f},{processing_time_ms:.2f},{inference_time_ms:.2f}\n")
