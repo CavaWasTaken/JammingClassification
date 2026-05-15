@@ -143,7 +143,7 @@ def main():
     TRUCK_ID = config["plate"]
     
     # --- SETUP MQTT ---
-    client = mqtt.Client(f"Truck-{TRUCK_ID}")
+    client = mqtt.Client(f"Truck-{TRUCK_ID}" , clean_session=False)
     client.tls_set(cert_reqs=ssl.CERT_NONE) 
     client.username_pw_set(user, password)
 
