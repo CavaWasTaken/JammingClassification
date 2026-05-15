@@ -84,7 +84,7 @@ def check_file_exists(filepath, description):
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"Error: {description} not found at path: {filepath}")
 
-STATE_FILE = "./Deployment/export/last_known_location.json"
+STATE_FILE = "./export/last_known_location.json"
 
 def load_last_location(default_lat=41.9, default_lon=12.5):
     """Load the last known location from the local file."""
@@ -107,10 +107,10 @@ def save_last_location(lat, lon):
 
 def main():
     # --- PRE-FLIGHT CHECKS ---
-    config_path = './Deployment/export/config.json'
-    onnx_file_path = "./Deployment/export/jamming_model.onnx"
-    class_names_path = "./Deployment/export/class_names.json"
-    scaler_path = "./Deployment/export/scaler_model.pkl"
+    config_path = './export/config.json'
+    onnx_file_path = "./export/jamming_model.onnx"
+    class_names_path = "./export/class_names.json"
+    scaler_path = "./export/scaler_model.pkl"
 
     check_file_exists(config_path, "Configuration file")
     check_file_exists(onnx_file_path, "ONNX model file")
@@ -143,7 +143,7 @@ def main():
     TRUCK_ID = config["plate"]
     
     # --- SETUP MQTT ---
-    client = mqtt.Client(f"Truck-{TRUCK_ID}")
+    client = mqtt.Client(f"Truck-{TRUCK_ID}" , clean_session=False)
     client.tls_set(cert_reqs=ssl.CERT_NONE) 
     client.username_pw_set(user, password)
 
@@ -156,8 +156,7 @@ def main():
                 "truckId": TRUCK_ID,
                 "status": "OFFLINE"
             }),
-        qos=1,
-        retain=True
+        qos=1
     )
 
     def on_connect(client, userdata, flags, rc):
@@ -175,26 +174,61 @@ def main():
     print("--- Loading Models...")
     
     # Let's check what is actually installed/available on the system
-    available_providers = ort.get_available_providers()
+    #available_providers = ort.get_available_providers()
     
-    providers = [
-        ('TensorrtExecutionProvider', {
-            'device_id': 0,
-            'trt_max_workspace_size': 2147483648,
-            'trt_fp16_enable': True,
-        }),
-        ('CUDAExecutionProvider', {
-            'device_id': 0,
-        })
+    #providers = [
+        #('TensorrtExecutionProvider', {
+           # 'device_id': 0,
+           # 'trt_max_workspace_size': 2147483648,
+           # 'trt_fp16_enable': True,
+        #}),
+        #('CUDAExecutionProvider', {
+           # 'device_id': 0,
+	   # 'arena_extend_strategy' : 'kSameAsRequested',
+	  #  'gpu_mem_limit' : 2*1024*1024*1024,
+	  #  'cudnn_conv_algo_search' : 'DEFAULT',
+	   # 'do_copy_in_default_stream' : True
+        #})
+    #]
+    
+    
+    #if 'TensorrtExecutionProvider' in available_providers:
+        #sess = ort.InferenceSession(onnx_file_path, providers=providers)
+        #print("ONNX successfully loaded with GPU acceleration.")
+    #else:
+        #print("GPU providers not found, falling back to CPU.")
+        #sess = ort.InferenceSession(onnx_file_path, providers=['CPUExecutionProvider'])
+  
+    # Configurazioni ottimizzate per Orin
+    providers_to_try = [
+	    ('TensorrtExecutionProvider', {
+		'device_id': 0,
+		'trt_max_workspace_size': 512 * 1024 * 1024,
+		'trt_fp16_enable': True,
+		'trt_engine_cache_enable': True,
+		'trt_engine_cache_path': '/app/trt_cache',
+		'trt_timing_cache_enable': True,
+		'trt_timing_cache_path': '/app/trt_cache',
+	    }),
+	    ('CUDAExecutionProvider', {
+		'device_id': 0,
+		'gpu_mem_limit': 1 * 1024 * 1024 * 1024,
+		'cudnn_conv_algo_search': 'DEFAULT',
+	    }),
+	    'CPUExecutionProvider'
     ]
-    
-    
-    if 'TensorrtExecutionProvider' in available_providers:
-        sess = ort.InferenceSession(onnx_file_path, providers=providers)
-        print("ONNX successfully loaded with GPU acceleration.")
-    else:
-        print("GPU providers not found, falling back to CPU.")
+
+    try:
+        # Proviamo a caricare con la lista completa (GPU + CPU come backup interno a ONNX)
+        sess = ort.InferenceSession(onnx_file_path, providers=providers_to_try)
+        active_provider = sess.get_providers()[0]
+        print(f"ONNX loaded successfully. Active provider: {active_provider}")
+    except Exception as e:
+        print(f"GPU Acceleration failed to initialize (Error: {e}).")
+        print("Falling back to pure CPU mode...")
+        # Se anche il backup interno di ONNX fallisce, forziamo solo CPU
         sess = ort.InferenceSession(onnx_file_path, providers=['CPUExecutionProvider'])
+        print("ONNX successfully loaded in CPU mode.")
 
     try:
         import joblib
@@ -221,10 +255,10 @@ def main():
         print("--- SDR streaming thread confirmed started")
 
     # --- SETUP CSV ---
-    csv_path = "./Deployment/predictions.csv"
+    csv_path = "./predictions.csv"
     
     with open(csv_path, "w") as f:
-        f.write("index,timestamp,pred_label,confidence,probability,energy,spectrogram_time_ms,int8_conversion_time_ms,feature_extraction_time_ms,feature_scaling_time_ms,processing_time,inference_time_ms\n")
+        f.write("index,timestamp,pred_label,confidence,probability,spectrogram_time_ms,int8_conversion_time_ms,feature_extraction_time_ms,feature_scaling_time_ms,processing_time,inference_time_ms\n")
 
     # STATUS_INTERVAL = 10 # Keep-alive interval for status updates (in seconds)
     STATUS_INTERVAL = config["status_update_interval_seconds"]
@@ -260,22 +294,26 @@ def main():
                 spec, freq, t = signal_analysis_live_object.compute_spectrogram(iq_samples_)
                 #spec, _, _ = signal_analysis_live_object.compute_spectrogram_general(iq_samples_) # Compute spectrogram using GPU if available, CPU otherwise
                 spectrogram_time_ms = (time.perf_counter() - start_time_spectrogram) * 1000
+                print(f"-Done SPECTROGRAM")
 
                 # --- 2. INT8 CONVERSION ---
                 start_time_int8_conversion = time.perf_counter()
                 spec_int8 = convert_float_to_int8(spec)
                 int8_conversion_time_ms = (time.perf_counter() - start_time_int8_conversion) * 1000
+                print(f"--Done CONVERSION")
 
                 # --- 3. FEATURE EXTRACTION ---
                 start_time_feature_extraction = time.perf_counter()
                 features = signal_analysis_live_object.extract_features_direct(iq_samples)
                 #features = signal_analysis_live_object.extract_features_direct_optimized(iq_samples) #faster
                 feature_extraction_time_ms = (time.perf_counter() - start_time_feature_extraction) * 1000
+                print(f"---Done FEATURE")
 
                 # --- 4. FEATURE SCALING ---
                 start_time_feature_scaling = time.perf_counter()
                 features_scaled = scaler.transform([features])[0]
                 feature_scaling_time_ms = (time.perf_counter() - start_time_feature_scaling) * 1000
+                print(f"----Done SCALING")
 
                 processing_time_ms = (time.perf_counter() - start_time_processing) * 1000
 
@@ -286,16 +324,21 @@ def main():
                 }
 
                 start_time = time.perf_counter()
-                outputs = sess.run(None, inputs)
+                #outputs = sess.run(None, inputs)
+                outputs = sess.run(['logits', 'penultimate'], inputs)
                 inference_time_ms = (time.perf_counter() - start_time) * 1000
+                print(f"-----Done INFERENCE")
 
                 logits = outputs[0]
                 penultimate = outputs[1]
-                energy = outputs[2]
+                #energy = outputs[2]
+                #energy_raw = outputs[2]
+                #energy = float(energy_raw) if energy_raw.ndim == 0 else energy_raw[0]
 
                 # --- 6. POST-PROCESSING & ALERTING ---
                 predicted_class = np.argmax(logits[0])
                 class_predicted_name = class_names[predicted_class] if predicted_class < len(class_names) else "Unknown"
+                print(f"------Chunk is {class_predicted_name}")
                 
                 if class_predicted_name == "CLEAN":
                     last_clean_latitude = gps_tracker.latitude
@@ -330,15 +373,15 @@ def main():
                             }
                         }
                     
-                        client.publish(topic_alert, json.dumps(payload))
-                        print(f"- JAMMING DETECTED ({jamming_type}) - Alert sent to Cloud at Last Known Good Location (Lat: {last_clean_latitude}, Lon: {last_clean_longitude})")
+                        client.publish(topic_alert, json.dumps(payload), qos=1)
+                        print(f"- JAMMING DETECTED ({class_predicted_name}) - Alert sent to Cloud at Last Known Good Location (Lat: {last_clean_latitude}, Lon: {last_clean_longitude})")
 
                 # Added 1e-9 to avoid division by zero in case of very low confidence
                 probability = np.max(logits[0]) / (np.sum(logits[0]) + 1e-9)
 
                 # --- 7. CSV WRITING ---
                 with open(csv_path, "a") as f:
-                    f.write(f"{iteration},{time.time()},{class_predicted_name},{np.max(logits[0]):.4f},{probability:.4f},{energy[0]:.4f},{spectrogram_time_ms:.2f},{int8_conversion_time_ms:.2f},{feature_extraction_time_ms:.2f},{feature_scaling_time_ms:.2f},{processing_time_ms:.2f},{inference_time_ms:.2f}\n")
+                    f.write(f"{iteration},{time.time()},{class_predicted_name},{np.max(logits[0]):.4f},{probability:.4f},{spectrogram_time_ms:.2f},{int8_conversion_time_ms:.2f},{feature_extraction_time_ms:.2f},{feature_scaling_time_ms:.2f},{processing_time_ms:.2f},{inference_time_ms:.2f}\n")
 
                 # --- 8. STATUS UPDATE ---
                 current_time = time.time()
@@ -352,7 +395,7 @@ def main():
                             "longitude": last_clean_longitude
                         }
                     }
-                    client.publish(topic_status, json.dumps(payload_status))
+                    client.publish(topic_status, json.dumps(payload_status), qos=1)
                     print(f"- STATUS sent (Lat: {last_clean_latitude}, Lon: {last_clean_longitude})")
 
                     save_last_location(last_clean_latitude, last_clean_longitude)
@@ -378,7 +421,7 @@ def main():
                 "longitude": last_clean_longitude
             }
         }
-        client.publish(topic_status, json.dumps(payload_offline), qos=1, retain=True)
+        client.publish(topic_status, json.dumps(payload_offline), qos=1)
         
         # # Wait a bit to ensure message is sent
         time.sleep(0.5)

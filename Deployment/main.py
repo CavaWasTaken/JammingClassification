@@ -20,8 +20,8 @@ def convert_float_to_int8(signal_float):
     return signal_int8
 
 def main():
-    onnx_file_path = "./Deployment/export/jamming_model.onnx"
-    class_names_path = "./Deployment/export/class_names.json"
+    onnx_file_path = "./export/jamming_model.onnx"
+    class_names_path = "./export/class_names.json"
 
     sess = ort.InferenceSession(onnx_file_path)
 
@@ -53,7 +53,7 @@ def main():
         print("--- SDR streaming thread confirmed started")
 
     # create a csv file where to write predictions with columns: timestamp, pred_label, confidence, energy
-    csv_path = "./Deployment/predictions.csv"
+    csv_path = "./predictions_main.csv"
     with open(csv_path, "w") as f:
         f.write(
             "timestamp,pred_label,osr_label,osr_realistic,osr_distance,osr_threshold,"
@@ -61,7 +61,7 @@ def main():
             "feature_extraction_time_ms,feature_scaling_time_ms,processing_time,inference_time_ms\n"
         )
 
-    scaler_path = "./Deployment/export/scaler_model.pkl"
+    scaler_path = "./export/scaler_model.pkl"
     if not os.path.exists(scaler_path):
         raise FileNotFoundError(f"Feature scaler not found: {scaler_path}")
     
@@ -189,6 +189,7 @@ def main():
                 osr_distance = float('inf')
                 osr_threshold = float('inf')
                 osr_realistic = 0
+            print(f"--- Chunk is {class_predicted_name}")
             # print(f"\n--- Predicted class: {class_predicted_name} | Inference time: {inference_time_ms:.2f} ms | FPS: {fps:.1f}")
             # print(f"\n--- Logits: {logits}")
             # print(f"\n--- Energy: {energy}")
@@ -202,7 +203,7 @@ def main():
             sorted_logits = np.sort(logits[0])
             margin = sorted_logits[-1] - sorted_logits[-2]
 
-            csv_path = "./Deployment/predictions.csv"
+            csv_path = "./predictions_main.csv"
             timestamp = time.time()
             with open(csv_path, "a") as f:
                 f.write(

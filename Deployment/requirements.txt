@@ -3,3 +3,8 @@ pyserial
 pyubx2
 joblib
 matplotlib
+pandas<2.2.0
+numpy<2.0.0
+scipy
+torch
+scikit-learn
