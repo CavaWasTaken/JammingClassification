@@ -99,9 +99,14 @@ def load_last_location(default_lat=41.9, default_lon=12.5):
 
 def save_last_location(lat, lon):
     """Save the last known location to the local file."""
+    if lat == 41.9 and lon == 12.5:
+        return
     try:
         with open(STATE_FILE, "w") as f:
             json.dump({"latitude": lat, "longitude": lon}, f)
+            f.flush()
+            os.fsync(f.fileno()) # Forza la scrittura nel file descriptor
+        os.sync()
     except Exception as e:
         print(f"Failed to save last location: {e}")
 
@@ -143,7 +148,7 @@ def main():
     TRUCK_ID = config["plate"]
     
     # --- SETUP MQTT ---
-    client = mqtt.Client(f"Truck-{TRUCK_ID}")
+    client = mqtt.Client(f"Truck-{TRUCK_ID}" , clean_session=False)
     client.tls_set(cert_reqs=ssl.CERT_NONE) 
     client.username_pw_set(user, password)
 
@@ -165,7 +170,7 @@ def main():
     client.on_connect = on_connect
 
     try:
-        client.connect(broker, port)
+        client.connect(broker, port, keepalive=40)
         client.loop_start() # Run network loop in background
     except Exception as e:
         print(f"ERROR: Cannot connect to MQTT broker ({e}).")
@@ -257,8 +262,8 @@ def main():
     # --- SETUP CSV ---
     csv_path = "./predictions.csv"
     
-    with open(csv_path, "w") as f:
-        f.write("index,timestamp,pred_label,confidence,probability,spectrogram_time_ms,int8_conversion_time_ms,feature_extraction_time_ms,feature_scaling_time_ms,processing_time,inference_time_ms\n")
+    #with open(csv_path, "w") as f:
+        #f.write("index,timestamp,pred_label,confidence,probability,spectrogram_time_ms,int8_conversion_time_ms,feature_extraction_time_ms,feature_scaling_time_ms,processing_time,inference_time_ms\n")
 
     # STATUS_INTERVAL = 10 # Keep-alive interval for status updates (in seconds)
     STATUS_INTERVAL = config["status_update_interval_seconds"]
@@ -338,11 +343,12 @@ def main():
                 # --- 6. POST-PROCESSING & ALERTING ---
                 predicted_class = np.argmax(logits[0])
                 class_predicted_name = class_names[predicted_class] if predicted_class < len(class_names) else "Unknown"
-                print(f"------Chunk is {class_predicted_name}")
+                print(f"------Chunk is {class_predicted_name}\n")
                 
                 if class_predicted_name == "CLEAN":
-                    last_clean_latitude = gps_tracker.latitude
-                    last_clean_longitude = gps_tracker.longitude
+                    if gps_tracker.latitude != 41.9 and gps_tracker.longitude != 12.5:
+                        last_clean_latitude = gps_tracker.latitude
+                        last_clean_longitude = gps_tracker.longitude
                     # Reset the counter if the signal becomes clear again
                     consecutive_jamming_count = 0
                     last_jamming_type = None
@@ -380,8 +386,8 @@ def main():
                 probability = np.max(logits[0]) / (np.sum(logits[0]) + 1e-9)
 
                 # --- 7. CSV WRITING ---
-                with open(csv_path, "a") as f:
-                    f.write(f"{iteration},{time.time()},{class_predicted_name},{np.max(logits[0]):.4f},{probability:.4f},{spectrogram_time_ms:.2f},{int8_conversion_time_ms:.2f},{feature_extraction_time_ms:.2f},{feature_scaling_time_ms:.2f},{processing_time_ms:.2f},{inference_time_ms:.2f}\n")
+                #with open(csv_path, "a") as f:
+                    #f.write(f"{iteration},{time.time()},{class_predicted_name},{np.max(logits[0]):.4f},{probability:.4f},{spectrogram_time_ms:.2f},{int8_conversion_time_ms:.2f},{feature_extraction_time_ms:.2f},{feature_scaling_time_ms:.2f},{processing_time_ms:.2f},{inference_time_ms:.2f}\n")
 
                 # --- 8. STATUS UPDATE ---
                 current_time = time.time()
@@ -401,7 +407,7 @@ def main():
                     save_last_location(last_clean_latitude, last_clean_longitude)
                     last_status_time = current_time
 
-                time.sleep(0.05)
+                #time.sleep(0.05)
             
             except Exception as e:
                 print(f"Error during iteration {iteration}: {e}")
