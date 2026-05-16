@@ -6,6 +6,7 @@ import time
 import onnxruntime as ort
 from sdr_stream import SdrStream
 from signal_analysis_live import SignalAnalysisLive
+from osr_stats import load_osr_stats, evaluate_osr
 import warnings
 warnings.filterwarnings('ignore', message='X does not have valid feature names')
 
@@ -27,6 +28,14 @@ def main():
     with open(class_names_path, "r") as f:
         class_names = json.load(f)
 
+    osr_stats_path = "./Deployment/export/osr_stats.npz"
+    osr_stats = None
+    if os.path.exists(osr_stats_path):
+        osr_stats = load_osr_stats(osr_stats_path)
+        print(f"--- Loaded OSR stats from: {osr_stats_path}")
+    else:
+        print(f"WARNING: OSR stats not found at {osr_stats_path}. Live realism check disabled.")
+
     sdr = SdrStream()
     fs = 10e6  # Sampling rate (HackRF One)
     
@@ -46,7 +55,11 @@ def main():
     # create a csv file where to write predictions with columns: timestamp, pred_label, confidence, energy
     csv_path = "./predictions_main.csv"
     with open(csv_path, "w") as f:
-        f.write("timestamp,pred_label,confidence,probability,margin,energy,spectrogram_time_ms,int8_conversion_time_ms,feature_extraction_time_ms,feature_scaling_time_ms,processing_time,inference_time_ms\n")
+        f.write(
+            "timestamp,pred_label,osr_label,osr_realistic,osr_distance,osr_threshold,"
+            "confidence,probability,margin,energy,spectrogram_time_ms,int8_conversion_time_ms,"
+            "feature_extraction_time_ms,feature_scaling_time_ms,processing_time,inference_time_ms\n"
+        )
 
     scaler_path = "./export/scaler_model.pkl"
     if not os.path.exists(scaler_path):
@@ -164,6 +177,18 @@ def main():
 
             predicted_class = np.argmax(logits[0])
             class_predicted_name = class_names[predicted_class] if predicted_class < len(class_names) else "Unknown"
+
+            if osr_stats is not None:
+                osr_eval = evaluate_osr(penultimate[0], class_predicted_name, osr_stats)
+                osr_label = osr_eval['osr_label']
+                osr_distance = osr_eval['distance']
+                osr_threshold = osr_eval['threshold']
+                osr_realistic = int(osr_eval['is_realistic'])
+            else:
+                osr_label = "UNKNOWN"
+                osr_distance = float('inf')
+                osr_threshold = float('inf')
+                osr_realistic = 0
             print(f"--- Chunk is {class_predicted_name}")
             # print(f"\n--- Predicted class: {class_predicted_name} | Inference time: {inference_time_ms:.2f} ms | FPS: {fps:.1f}")
             # print(f"\n--- Logits: {logits}")
@@ -181,7 +206,17 @@ def main():
             csv_path = "./predictions_main.csv"
             timestamp = time.time()
             with open(csv_path, "a") as f:
-                f.write(f"{timestamp},{class_predicted_name},{np.max(logits[0]):.4f},{np.max(probabilities):.4f},{energy[0]:.4f},{margin:.4f},{spectrogram_time_ms:.2f},{int8_conversion_time_ms:.2f},{feature_extraction_time_ms:.2f},{feature_scaling_time_ms:.2f},{processing_time_ms:.2f},{inference_time_ms:.2f}\n")
+                f.write(
+                    f"{timestamp},{class_predicted_name},{osr_label},{osr_realistic},{osr_distance:.4f},{osr_threshold:.4f},"
+                    f"{np.max(logits[0]):.4f},{np.max(probabilities):.4f},{energy[0]:.4f},{margin:.4f},"
+                    f"{spectrogram_time_ms:.2f},{int8_conversion_time_ms:.2f},{feature_extraction_time_ms:.2f},"
+                    f"{feature_scaling_time_ms:.2f},{processing_time_ms:.2f},{inference_time_ms:.2f}\n"
+                )
+
+            print(
+                f"Pred: {class_predicted_name} | OSR: {osr_label} | realistic={osr_realistic} "
+                f"(dist={osr_distance:.3f}, thr={osr_threshold:.3f})"
+            )
 
             # Optional tiny sleep to keep console readable.
             time.sleep(0.05)
