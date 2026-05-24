@@ -23,7 +23,13 @@ def main():
     onnx_file_path = "./export/jamming_model.onnx"
     class_names_path = "./export/class_names.json"
 
-    sess = ort.InferenceSession(onnx_file_path)
+    # Initialize ONNX session with GPU support (CUDA > CPU fallback)
+    sess = ort.InferenceSession(
+        onnx_file_path,
+        providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+    )
+    active_provider = sess.get_providers()[0]
+    print(f"✓ Using provider: {active_provider}")
 
     with open(class_names_path, "r") as f:
         class_names = json.load(f)

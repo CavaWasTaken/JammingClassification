@@ -204,36 +204,10 @@ def main():
         #print("GPU providers not found, falling back to CPU.")
         #sess = ort.InferenceSession(onnx_file_path, providers=['CPUExecutionProvider'])
   
-    # Configurazioni ottimizzate per Orin
-    providers_to_try = [
-	    ('TensorrtExecutionProvider', {
-		'device_id': 0,
-		'trt_max_workspace_size': 512 * 1024 * 1024,
-		'trt_fp16_enable': True,
-		'trt_engine_cache_enable': True,
-		'trt_engine_cache_path': '/app/trt_cache',
-		'trt_timing_cache_enable': True,
-		'trt_timing_cache_path': '/app/trt_cache',
-	    }),
-	    ('CUDAExecutionProvider', {
-		'device_id': 0,
-		'gpu_mem_limit': 1 * 1024 * 1024 * 1024,
-		'cudnn_conv_algo_search': 'DEFAULT',
-	    }),
-	    'CPUExecutionProvider'
-    ]
-
-    try:
-        # Proviamo a caricare con la lista completa (GPU + CPU come backup interno a ONNX)
-        sess = ort.InferenceSession(onnx_file_path, providers=providers_to_try)
-        active_provider = sess.get_providers()[0]
-        print(f"ONNX loaded successfully. Active provider: {active_provider}")
-    except Exception as e:
-        print(f"GPU Acceleration failed to initialize (Error: {e}).")
-        print("Falling back to pure CPU mode...")
-        # Se anche il backup interno di ONNX fallisce, forziamo solo CPU
-        sess = ort.InferenceSession(onnx_file_path, providers=['CPUExecutionProvider'])
-        print("ONNX successfully loaded in CPU mode.")
+    # Initialize ONNX session with GPU support (CUDA > CPU fallback)
+    sess = ort.InferenceSession(onnx_file_path, providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+    active_provider = sess.get_providers()[0]
+    print(f"✓ ONNX loaded successfully. Active provider: {active_provider}")
 
     try:
         import joblib
