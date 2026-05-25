@@ -15,7 +15,7 @@ import serial.tools.list_ports
 from pyubx2 import UBXReader, UBX_PROTOCOL
 
 warnings.filterwarnings('ignore', message='X does not have valid feature names')
-
+warnings.filterwarnings('ignore')
 
 
 class UbloxGpsThread(threading.Thread): 
@@ -203,7 +203,8 @@ def main():
     #else:
         #print("GPU providers not found, falling back to CPU.")
         #sess = ort.InferenceSession(onnx_file_path, providers=['CPUExecutionProvider'])
-  
+    sess_options = ort.SessionOptions()
+    sess_options.log_severity_level = 3
     # Configurazioni ottimizzate per Orin
     providers_to_try = [
 	    ('TensorrtExecutionProvider', {
@@ -225,16 +226,16 @@ def main():
 
     try:
         # Proviamo a caricare con la lista completa (GPU + CPU come backup interno a ONNX)
-        sess = ort.InferenceSession(onnx_file_path, providers=providers_to_try)
+        sess = ort.InferenceSession(onnx_file_path, sess_options=sess_options,providers=providers_to_try)
         active_provider = sess.get_providers()[0]
         print(f"ONNX loaded successfully. Active provider: {active_provider}")
     except Exception as e:
         print(f"GPU Acceleration failed to initialize (Error: {e}).")
         print("Falling back to pure CPU mode...")
         # Se anche il backup interno di ONNX fallisce, forziamo solo CPU
-        sess = ort.InferenceSession(onnx_file_path, providers=['CPUExecutionProvider'])
+        sess = ort.InferenceSession(onnx_file_path,sess_options=sess_options, providers=['CPUExecutionProvider'])
         print("ONNX successfully loaded in CPU mode.")
-
+    
     try:
         import joblib
         scaler = joblib.load(scaler_path)
@@ -262,8 +263,8 @@ def main():
     # --- SETUP CSV ---
     csv_path = "./predictions.csv"
     
-    #with open(csv_path, "w") as f:
-        #f.write("index,timestamp,pred_label,confidence,probability,spectrogram_time_ms,int8_conversion_time_ms,feature_extraction_time_ms,feature_scaling_time_ms,processing_time,inference_time_ms\n")
+    with open(csv_path, "w") as f:
+        f.write("index,timestamp,pred_label,confidence,probability,spectrogram_time_ms,int8_conversion_time_ms,feature_extraction_time_ms,feature_scaling_time_ms,processing_time,inference_time_ms\n")
 
     # STATUS_INTERVAL = 10 # Keep-alive interval for status updates (in seconds)
     STATUS_INTERVAL = config["status_update_interval_seconds"]
@@ -285,8 +286,8 @@ def main():
                 iq_samples = sdr.get_samples(window_chunk=200e-6)
                 start_time_processing = time.perf_counter()
                 
-                if iteration % 20 == 0:
-                    print(f"[Iteration {iteration}] Buffer size: {len(sdr.iq_buffer)}, Last IQ shape: {iq_samples.shape if iq_samples is not None else 'None'}")
+                #if iteration % 20 == 0:
+                    #print(f"[Iteration {iteration}] Buffer size: {len(sdr.iq_buffer)}, Last IQ shape: {iq_samples.shape if iq_samples is not None else 'None'}")
                 
                 if iq_samples is None or len(iq_samples) < 1000:
                     continue
@@ -299,26 +300,26 @@ def main():
                 spec, freq, t = signal_analysis_live_object.compute_spectrogram(iq_samples_)
                 #spec, _, _ = signal_analysis_live_object.compute_spectrogram_general(iq_samples_) # Compute spectrogram using GPU if available, CPU otherwise
                 spectrogram_time_ms = (time.perf_counter() - start_time_spectrogram) * 1000
-                print(f"-Done SPECTROGRAM")
+                #print(f"-Done SPECTROGRAM")
 
                 # --- 2. INT8 CONVERSION ---
                 start_time_int8_conversion = time.perf_counter()
                 spec_int8 = convert_float_to_int8(spec)
                 int8_conversion_time_ms = (time.perf_counter() - start_time_int8_conversion) * 1000
-                print(f"--Done CONVERSION")
+                #print(f"--Done CONVERSION")
 
                 # --- 3. FEATURE EXTRACTION ---
                 start_time_feature_extraction = time.perf_counter()
                 features = signal_analysis_live_object.extract_features_direct(iq_samples)
                 #features = signal_analysis_live_object.extract_features_direct_optimized(iq_samples) #faster
                 feature_extraction_time_ms = (time.perf_counter() - start_time_feature_extraction) * 1000
-                print(f"---Done FEATURE")
+                #print(f"---Done FEATURE")
 
                 # --- 4. FEATURE SCALING ---
                 start_time_feature_scaling = time.perf_counter()
                 features_scaled = scaler.transform([features])[0]
                 feature_scaling_time_ms = (time.perf_counter() - start_time_feature_scaling) * 1000
-                print(f"----Done SCALING")
+                #print(f"----Done SCALING")
 
                 processing_time_ms = (time.perf_counter() - start_time_processing) * 1000
 
@@ -329,10 +330,10 @@ def main():
                 }
 
                 start_time = time.perf_counter()
-                #outputs = sess.run(None, inputs)
-                outputs = sess.run(['logits', 'penultimate'], inputs)
+                outputs = sess.run(None, inputs)
+                #outputs = sess.run(['logits', 'penultimate'], inputs)
                 inference_time_ms = (time.perf_counter() - start_time) * 1000
-                print(f"-----Done INFERENCE")
+                #print(f"-----Done INFERENCE")
 
                 logits = outputs[0]
                 penultimate = outputs[1]
@@ -343,7 +344,8 @@ def main():
                 # --- 6. POST-PROCESSING & ALERTING ---
                 predicted_class = np.argmax(logits[0])
                 class_predicted_name = class_names[predicted_class] if predicted_class < len(class_names) else "Unknown"
-                print(f"------Chunk is {class_predicted_name}\n")
+                print(f"------Chunk {iteration} is {class_predicted_name}\n")
+                print(f"---Processing Time: {processing_time_ms}")
                 
                 if class_predicted_name == "CLEAN":
                     if gps_tracker.latitude != 41.9 and gps_tracker.longitude != 12.5:
@@ -362,7 +364,7 @@ def main():
                         consecutive_jamming_count = 1
                     
                     # Sending alert only when the threshold is reached
-                    if consecutive_jamming_count == ALERT_THRESHOLD:
+                    if consecutive_jamming_count % ALERT_THRESHOLD == 0:
                         # JAMMING DETECTED
                         parts = class_predicted_name.split("_")
                         jamming_type = parts[0] if len(parts) > 0 else "Unknown"
@@ -386,8 +388,8 @@ def main():
                 probability = np.max(logits[0]) / (np.sum(logits[0]) + 1e-9)
 
                 # --- 7. CSV WRITING ---
-                #with open(csv_path, "a") as f:
-                    #f.write(f"{iteration},{time.time()},{class_predicted_name},{np.max(logits[0]):.4f},{probability:.4f},{spectrogram_time_ms:.2f},{int8_conversion_time_ms:.2f},{feature_extraction_time_ms:.2f},{feature_scaling_time_ms:.2f},{processing_time_ms:.2f},{inference_time_ms:.2f}\n")
+                with open(csv_path, "a") as f:
+                    f.write(f"{iteration},{time.time()},{class_predicted_name},{np.max(logits[0]):.4f},{probability:.4f},{spectrogram_time_ms:.2f},{int8_conversion_time_ms:.2f},{feature_extraction_time_ms:.2f},{feature_scaling_time_ms:.2f},{processing_time_ms:.2f},{inference_time_ms:.2f}\n")
 
                 # --- 8. STATUS UPDATE ---
                 current_time = time.time()
