@@ -99,15 +99,17 @@ print(f"\nSamples where correction was applied: {corrections}/{len(df)} ({100*co
 
 if corrections > 0:
     # What was corrected?
-    corrected_df = df[df['corrected'] == 1]
+    corrected_df = df[(df['corrected'] == 1)]
     
     # Check if corrections helped or hurt
     corrected_correct = len(corrected_df[corrected_df['osr_label'] == corrected_df['true_class_full']])
     corrected_wrong = corrections - corrected_correct
+    corrected_was_UNKNOWN = len(corrected_df[corrected_df['true_class_full'] == 'UNKNOWN'])
     
     print(f"\nOutcome of corrections:")
     print(f"  ✓ Correction was beneficial:     {corrected_correct}/{corrections} ({100*corrected_correct/corrections:.1f}%)")
-    print(f"  ✗ Correction made it worse:      {corrected_wrong}/{corrections} ({100*corrected_wrong/corrections:.1f}%)")
+    print(f"  ✗ Correction still wrong:        {corrected_wrong}/{corrections} ({100*corrected_wrong/corrections:.1f}%)")
+    print(f"  ⚠ True class was UNKNOWN:        {corrected_was_UNKNOWN}/{corrections} ({100*corrected_was_UNKNOWN/corrections:.1f}%)")
 
 # ============================================================================
 # 4. OVERALL OSR ACCURACY

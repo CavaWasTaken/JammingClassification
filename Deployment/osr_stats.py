@@ -122,22 +122,22 @@ def evaluate_osr(penultimate, logits, osr_stats, class_names):
     best_class = min(distances, key=distances.get)
     dist_to_best = distances[best_class]
     threshold_best = thresholds[best_class]
-    
+
     # Decision logic
     if dist_to_pred <= threshold_pred:
         # Predicted class is within threshold - ACCEPT
         osr_label = pred_class
         corrected = False
-    else:
+    else:   # prediction rejected
         # Predicted class is outside threshold - CHECK CORRECTION
-        if best_class != pred_class and dist_to_best <= threshold_best:
-            # Closest class is different and within its threshold - CORRECT
-            osr_label = best_class
-            corrected = True
-        else:
-            # All distances exceed thresholds - UNKNOWN
-            osr_label = 'UNKNOWN'
-            corrected = False
+        # if best_class != pred_class and dist_to_best <= threshold_best:
+        #     # Closest class is different and within its threshold - CORRECT
+        #     osr_label = best_class
+        #     corrected = True
+        # else:
+        # All distances exceed thresholds - UNKNOWN
+        osr_label = 'UNKNOWN'
+        corrected = False
     
     return {
         'osr_label': osr_label,
