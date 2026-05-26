@@ -14,6 +14,9 @@ import serial
 import serial.tools.list_ports
 from pyubx2 import UBXReader, UBX_PROTOCOL
 
+# --- IMPORT OSR ---
+from osr_stats import load_osr_stats, evaluate_osr
+
 warnings.filterwarnings('ignore', message='X does not have valid feature names')
 warnings.filterwarnings('ignore')
 
@@ -116,6 +119,7 @@ def main():
     onnx_file_path = "./export/jamming_model.onnx"
     class_names_path = "./export/class_names.json"
     scaler_path = "./export/scaler_model.pkl"
+    osr_stats_path = "./export/osr_stats.npz"
 
     check_file_exists(config_path, "Configuration file")
     check_file_exists(onnx_file_path, "ONNX model file")
@@ -136,6 +140,15 @@ def main():
 
     with open(class_names_path, "r") as f:
         class_names = json.load(f)
+
+    # --- LOAD OSR STATS ---
+    if os.path.exists(osr_stats_path):
+        osr = load_osr_stats(osr_stats_path)
+        print("--- OSR stats loaded successfully.")
+        use_osr = True
+    else:
+        print("--- WARNING: OSR stats file not found. Running without OSR.")
+        use_osr = False
 
     hive_credentials = config["hivemq"]
     topics = config["topics"]
@@ -178,31 +191,6 @@ def main():
     # --- LOAD MODELS ---
     print("--- Loading Models...")
     
-    # Let's check what is actually installed/available on the system
-    #available_providers = ort.get_available_providers()
-    
-    #providers = [
-        #('TensorrtExecutionProvider', {
-           # 'device_id': 0,
-           # 'trt_max_workspace_size': 2147483648,
-           # 'trt_fp16_enable': True,
-        #}),
-        #('CUDAExecutionProvider', {
-           # 'device_id': 0,
-	   # 'arena_extend_strategy' : 'kSameAsRequested',
-	  #  'gpu_mem_limit' : 2*1024*1024*1024,
-	  #  'cudnn_conv_algo_search' : 'DEFAULT',
-	   # 'do_copy_in_default_stream' : True
-        #})
-    #]
-    
-    
-    #if 'TensorrtExecutionProvider' in available_providers:
-        #sess = ort.InferenceSession(onnx_file_path, providers=providers)
-        #print("ONNX successfully loaded with GPU acceleration.")
-    #else:
-        #print("GPU providers not found, falling back to CPU.")
-        #sess = ort.InferenceSession(onnx_file_path, providers=['CPUExecutionProvider'])
     sess_options = ort.SessionOptions()
     sess_options.log_severity_level = 3
     # Configurazioni ottimizzate per Orin
@@ -264,9 +252,9 @@ def main():
     csv_path = "./predictions.csv"
     
     with open(csv_path, "w") as f:
-        f.write("index,timestamp,pred_label,confidence,probability,spectrogram_time_ms,int8_conversion_time_ms,feature_extraction_time_ms,feature_scaling_time_ms,processing_time,inference_time_ms\n")
+        # Aggiunti i campi OSR all'intestazione del CSV
+        f.write("index,timestamp,pred_label,confidence,probability,spectrogram_time_ms,int8_conversion_time_ms,feature_extraction_time_ms,feature_scaling_time_ms,processing_time,inference_time_ms,osr_time_ms,osr_distance,osr_threshold,osr_corrected\n")
 
-    # STATUS_INTERVAL = 10 # Keep-alive interval for status updates (in seconds)
     STATUS_INTERVAL = config["status_update_interval_seconds"]
     last_status_time = time.time()
     ALERT_THRESHOLD = config["number_of_consecutive_alerts"]
@@ -276,7 +264,6 @@ def main():
         # --- DEBOUNCE LOGIC FOR ALERT ---
         consecutive_jamming_count = 0
         last_jamming_type = None
-        # ALERT_THRESHOLD = 3  # Number of consecutive measurements required
         
         while True:
             iteration += 1
@@ -286,40 +273,30 @@ def main():
                 iq_samples = sdr.get_samples(window_chunk=200e-6)
                 start_time_processing = time.perf_counter()
                 
-                #if iteration % 20 == 0:
-                    #print(f"[Iteration {iteration}] Buffer size: {len(sdr.iq_buffer)}, Last IQ shape: {iq_samples.shape if iq_samples is not None else 'None'}")
-                
                 if iq_samples is None or len(iq_samples) < 1000:
                     continue
 
                 iq_samples_ = iq_samples[:1000]
 
-
                 # --- 1. SPECTROGRAM ---
                 start_time_spectrogram = time.perf_counter()
                 spec, freq, t = signal_analysis_live_object.compute_spectrogram(iq_samples_)
-                #spec, _, _ = signal_analysis_live_object.compute_spectrogram_general(iq_samples_) # Compute spectrogram using GPU if available, CPU otherwise
                 spectrogram_time_ms = (time.perf_counter() - start_time_spectrogram) * 1000
-                #print(f"-Done SPECTROGRAM")
 
                 # --- 2. INT8 CONVERSION ---
                 start_time_int8_conversion = time.perf_counter()
                 spec_int8 = convert_float_to_int8(spec)
                 int8_conversion_time_ms = (time.perf_counter() - start_time_int8_conversion) * 1000
-                #print(f"--Done CONVERSION")
 
                 # --- 3. FEATURE EXTRACTION ---
                 start_time_feature_extraction = time.perf_counter()
                 features = signal_analysis_live_object.extract_features_direct(iq_samples)
-                #features = signal_analysis_live_object.extract_features_direct_optimized(iq_samples) #faster
                 feature_extraction_time_ms = (time.perf_counter() - start_time_feature_extraction) * 1000
-                #print(f"---Done FEATURE")
 
                 # --- 4. FEATURE SCALING ---
                 start_time_feature_scaling = time.perf_counter()
                 features_scaled = scaler.transform([features])[0]
                 feature_scaling_time_ms = (time.perf_counter() - start_time_feature_scaling) * 1000
-                #print(f"----Done SCALING")
 
                 processing_time_ms = (time.perf_counter() - start_time_processing) * 1000
 
@@ -331,19 +308,33 @@ def main():
 
                 start_time = time.perf_counter()
                 outputs = sess.run(None, inputs)
-                #outputs = sess.run(['logits', 'penultimate'], inputs)
                 inference_time_ms = (time.perf_counter() - start_time) * 1000
-                #print(f"-----Done INFERENCE")
 
                 logits = outputs[0]
                 penultimate = outputs[1]
-                #energy = outputs[2]
-                #energy_raw = outputs[2]
-                #energy = float(energy_raw) if energy_raw.ndim == 0 else energy_raw[0]
 
-                # --- 6. POST-PROCESSING & ALERTING ---
+                # --- 6. POST-PROCESSING & OSR ALERTING ---
                 predicted_class = np.argmax(logits[0])
-                class_predicted_name = class_names[predicted_class] if predicted_class < len(class_names) else "Unknown"
+                base_pred_name = class_names[predicted_class] if predicted_class < len(class_names) else "Unknown"
+
+                start_time_osr = time.perf_counter()
+
+                # Applica logica OSR
+                if use_osr:
+                    # Passiamo logits e penultimate alla funzione (utilizzando gli indici [0] in quanto batched)
+                    osr_eval = evaluate_osr(penultimate[0], logits[0], osr, class_names)
+                    class_predicted_name = osr_eval['osr_label'] # Sarà il nome della classe o "UNKNOWN"
+                    osr_distance = osr_eval['distance_to_pred']
+                    osr_threshold = osr_eval['threshold_pred']
+                    corrected = osr_eval['corrected']
+                else:
+                    class_predicted_name = base_pred_name
+                    osr_distance = 0.0
+                    osr_threshold = 0.0
+                    corrected = False
+
+                osr_time_ms = (time.perf_counter() - start_time_osr) * 1000
+
                 print(f"------Chunk {iteration} is {class_predicted_name}\n")
                 print(f"---Processing Time: {processing_time_ms}")
                 
@@ -355,6 +346,9 @@ def main():
                     consecutive_jamming_count = 0
                     last_jamming_type = None
                                 
+                # Nota: 'Unknown' (minuscolo) è il fallback array, 'UNKNOWN' (maiuscolo) è generato dall'OSR.
+                # Escludiamo "Unknown" per evitare alert errati se l'array fallisce, ma LASCIAMO PASSARE "UNKNOWN" 
+                # così i jammer sconosciuti rilevati dall'OSR manderanno l'alert!
                 elif class_predicted_name != "Unknown":
                     # Confirmation logic: must be the SAME type consecutively
                     if class_predicted_name == last_jamming_type:
@@ -367,6 +361,8 @@ def main():
                     if consecutive_jamming_count % ALERT_THRESHOLD == 0:
                         # JAMMING DETECTED
                         parts = class_predicted_name.split("_")
+                        
+                        # Se è "UNKNOWN", parts[0] sarà "UNKNOWN" e jamming_level diventerà "Unknown". Perfetto per il payload.
                         jamming_type = parts[0] if len(parts) > 0 else "Unknown"
                         jamming_level = parts[1] if len(parts) > 1 else "Unknown"
 
@@ -389,7 +385,7 @@ def main():
 
                 # --- 7. CSV WRITING ---
                 with open(csv_path, "a") as f:
-                    f.write(f"{iteration},{time.time()},{class_predicted_name},{np.max(logits[0]):.4f},{probability:.4f},{spectrogram_time_ms:.2f},{int8_conversion_time_ms:.2f},{feature_extraction_time_ms:.2f},{feature_scaling_time_ms:.2f},{processing_time_ms:.2f},{inference_time_ms:.2f}\n")
+                    f.write(f"{iteration},{time.time()},{class_predicted_name},{np.max(logits[0]):.4f},{probability:.4f},{spectrogram_time_ms:.2f},{int8_conversion_time_ms:.2f},{feature_extraction_time_ms:.2f},{feature_scaling_time_ms:.2f},{processing_time_ms:.2f},{inference_time_ms:.2f},{osr_time_ms:.2f},{osr_distance:.4f},{osr_threshold:.4f},{int(corrected)}\n")
 
                 # --- 8. STATUS UPDATE ---
                 current_time = time.time()
@@ -409,8 +405,6 @@ def main():
                     save_last_location(last_clean_latitude, last_clean_longitude)
                     last_status_time = current_time
 
-                #time.sleep(0.05)
-            
             except Exception as e:
                 print(f"Error during iteration {iteration}: {e}")
 
@@ -418,7 +412,6 @@ def main():
         print("Stopping signal acquisition...")
     finally:
         save_last_location(last_clean_latitude, last_clean_longitude)
-            # --- SEND OFFLINE STATUS MANUALLY ---
         print("Sending OFFLINE status before disconnecting...")
         payload_offline = {
             "truckId": TRUCK_ID,
@@ -431,14 +424,11 @@ def main():
         }
         client.publish(topic_status, json.dumps(payload_offline), qos=1)
         
-        # # Wait a bit to ensure message is sent
         time.sleep(0.5)
         client.disconnect()
         client.loop_stop()
         sdr.stop_stream()
         gps_tracker.stop()
         
-
-
 if __name__ == "__main__":
     main()
