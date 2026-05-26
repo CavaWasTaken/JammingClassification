@@ -1,0 +1,260 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+    --blue: #1A56DB;
+    --blue-dark: #1344b8;
+    --bg: #F4F6FA;
+    --surface: #ffffff;
+    --text: #111827;
+    --text-muted: #6B7280;
+    --border: #E5E7EB;
+    --input-w: 340px;
+
+    /* Alert palette — deep crimson, not neon red */
+    --alert-bg: #C0392B;
+    --alert-bg-dark: #A93226;
+    --alert-text: #ffffff;
+    --overlay-bg: #D1D5DB; /* light gray overlay */
+}
+
+html, body {
+    height: 100%;
+    font-family: 'IBM Plex Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+}
+
+/* ─── Page layout ─── */
+.page {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    transition: background 0.3s ease;
+}
+.page.alert-mode {
+    background: var(--overlay-bg);
+}
+
+/* ─── Brand ─── */
+.brand {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.25em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 48px;
+}
+
+/* ─── Card ─── */
+.card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 40px 36px 36px;
+    width: var(--input-w);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+/* ─── Label ─── */
+.input-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--blue);
+    margin-bottom: 10px;
+    font-family: 'IBM Plex Mono', monospace;
+}
+
+/* ─── Input ─── */
+#plate {
+    width: 100%;
+    height: 44px;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    padding: 0 14px;
+    font-size: 15px;
+    font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: 0.08em;
+    color: var(--text);
+    background: #FAFBFC;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+#plate:focus {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(26,86,219,0.12);
+}
+#plate::placeholder { color: #B0B7C3; }
+
+/* ─── Button ─── */
+#connect-btn {
+    width: 100%;
+    height: 44px;
+    margin-top: 12px;
+    background: var(--blue);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-family: 'IBM Plex Sans', sans-serif;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+}
+#connect-btn:hover { background: var(--blue-dark); }
+#connect-btn:active { transform: scale(0.98); }
+
+/* ─── Status line ─── */
+#monitoring-status {
+    margin-top: 20px;
+    font-size: 13px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--text-muted);
+    text-align: center;
+    min-height: 20px;
+    letter-spacing: 0.04em;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.3s, transform 0.3s;
+}
+#monitoring-status.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+#monitoring-status .dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #22C55E;
+    margin-right: 7px;
+    vertical-align: middle;
+    animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+#monitoring-status .dot-green {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #22C55E;
+    margin-right: 7px;
+    vertical-align: middle;
+    animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+#monitoring-status .dot-red {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #EF4444;
+    margin-right: 7px;
+    vertical-align: middle;
+    animation: pulse-dot 1.6s ease-in-out infinite;
+}
+    
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.7); }
+}
+
+/* ─── ALERT OVERLAY ─── */
+#alert-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+#alert-overlay.active { display: flex; }
+
+/* ─── ALERT BOX ─── */
+#alert-box {
+    width: var(--input-w);
+    aspect-ratio: 1 / 1;
+    background: var(--alert-bg);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 28px;
+    box-shadow: 0 8px 40px rgba(192,57,43,0.35), 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.alert-icon {
+    font-size: 42px;
+    line-height: 1;
+}
+.alert-title {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--alert-text);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: center;
+    line-height: 1.3;
+}
+.alert-sub {
+    font-size: 13px;
+    color: rgba(255,255,255,0.7);
+    font-family: 'IBM Plex Sans', sans-serif;
+    text-align: center;
+}
+
+#ack-btn {
+    width: 80%;
+    height: 42px;
+    background: rgba(255,255,255,0.15);
+    border: 1.5px solid rgba(255,255,255,0.5);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-family: 'IBM Plex Sans', sans-serif;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+#ack-btn:hover {
+    background: rgba(255,255,255,0.28);
+    border-color: rgba(255,255,255,0.8);
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-6px); }
+    40%, 80% { transform: translateX(6px); }
+}
+
+#plate.invalid {
+    border: 1px solid #ff4d4d;
+    color: #ff4d4d;
+}
+/* Colora di rosso il placeholder quando l'input ha la classe 'invalid' */
+input.invalid::placeholder {
+    color: #ff4d4d;
+    opacity: 1; /* Consigliato: Firefox per impostazione predefinita rende i placeholder semitrasparenti */
+}
+
+/* Opzionale: per dare un bordo rosso all'input quando c'è un errore */
+input.invalid {
+    border-color: #ff4d4d;
+    outline-color: #ff4d4d;
+    animation: shake 0.4s ease-in-out;
+}

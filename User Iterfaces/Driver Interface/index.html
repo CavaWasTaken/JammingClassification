@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>N-MON Driver</title>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="page" id="page">
+    <div class="brand">N-MON · Driver Terminal</div>
+
+    <div class="card">
+        <div class="input-label">Insert Plate</div>
+        <input id="plate" type="text" placeholder="e.g. AB123CD" maxlength="10" autocomplete="off" spellcheck="false">
+        <button id="connect-btn" onclick="connect()">Connect &amp; Monitor</button>
+    </div>
+
+    <div id="monitoring-status"></div>
+</div>
+
+<div id="alert-overlay">
+    <div id="alert-box">
+        <div class="alert-icon">&#9888;&#65039;</div>
+        <div class="alert-title">Jamming<br>Detected</div>
+        <div class="alert-sub" id="alert-sub">GPS signal compromised</div>
+        <button id="ack-btn" onclick="acknowledge()">Acknowledge</button>
+    </div>
+</div>
+
+<script>
+    let config = null;
+    let alarmInterval = null;
+    let vibrateInterval = null;
+    let audioCtx = null;
+    let lastAckTime = 0;
+
+    fetch("config.json")
+        .then(r => r.json())
+        .then(data => { config = data; })
+        .catch(() => {});
+    
+    function isValidPlate(plate) {
+        // converte in maiuscolo e rimuove spazi
+        plate = plate.trim().replace(/\s+/g, '').toUpperCase();
+
+        // formato: 2 lettere + 3 numeri + 2 lettere
+        const regex = /^[A-Z]{2}[0-9]{3}[A-Z]{2}$/;
+
+        return regex.test(plate) ? plate : null;
+    }
+
+    function connect() {
+        const input = document.getElementById('plate');
+        const validatedPlate = isValidPlate(input.value);
+        if (!validatedPlate) {
+            input.value = '';
+            input.placeholder = 'Invalid plate format';
+
+            input.classList.remove('invalid');
+            void input.offsetWidth;
+            input.classList.add('invalid');
+
+            input.focus();
+            return;
+        }
+
+        // reset stato errore
+        input.placeholder = 'e.g. AB123CD';
+        input.classList.remove('invalid');
+
+        const plate = validatedPlate;
+
+
+        // Create AudioContext once, on user gesture
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        // Resume synchronously while we are still inside the user gesture
+        audioCtx.resume();
+
+        const status = document.getElementById('monitoring-status');
+
+        status.innerHTML = `
+            <div id="monitor-line">
+                <span class="dot-green"></span>MONITORING · ${plate.toUpperCase()}
+            </div>
+
+            <div id="system-line">
+                <span class="dot-red"></span>SYSTEM · WAITING
+            </div>
+        `;
+
+        status.classList.add('visible');
+
+        if (!config) return;
+
+        const CLUSTER_URL = 'wss://' + config.hivemq.host + ':' + config.hivemq.port_wss + '/mqtt';
+        const client = mqtt.connect(CLUSTER_URL, {
+            username: config.hivemq.username,
+            password: config.hivemq.password,
+        });
+
+        client.subscribe(config.topics.alerts + '/' + plate);
+        client.subscribe(config.topics.status + '/' + plate);
+        client.on('message', (topic, message) => {
+
+        if (topic.includes(config.topics.alerts)) {
+                const now = Date.now();
+                const cooldownMs = (config.alert_cooldown || 30) * 1000;
+
+                if (now - lastAckTime > cooldownMs) {
+                    triggerAlert(plate);
+                } else {
+                    console.log("Alert ignorato: cooldown attivo");
+                }
+        }
+
+        else if (topic.includes(config.topics.status)) {
+
+                // converte il payload MQTT in JSON
+                const payload = JSON.parse(message.toString());
+
+                // aggiorna la riga SYSTEM
+                const systemLine = document.getElementById('system-line');
+
+                let dotClass = "dot-red";
+
+                if (payload.status === "ACTIVE") {
+                    dotClass = "dot-green";
+                }
+
+                systemLine.innerHTML = `
+                    <span class="${dotClass}"></span>
+                    SYSTEM · ${payload.status}
+                `;
+        }
+        });
+    }
+
+    function triggerAlert(plate) {
+        document.getElementById('alert-sub').textContent = 'Vehicle \u00b7 ' + plate.toUpperCase();
+        document.getElementById('alert-overlay').classList.add('active');
+        document.getElementById('page').classList.add('alert-mode');
+        startBeep();
+        startVibration();
+    }
+
+    function acknowledge() {
+        document.getElementById('alert-overlay').classList.remove('active');
+        document.getElementById('page').classList.remove('alert-mode');
+        stopBeep();
+        stopVibration();
+        lastAckTime = Date.now();
+    }
+
+    // ── Vibration ─────────────────────────────────────────────
+    //Il problema è che navigator.vibrate su iOS Safari non esiste (Apple non lo implementa). 
+    // Su Android Chrome invece funziona, ma solo se la pagina è stata aggiunta alla home screen come PWA oppure se c'è stato un recente gesto utente
+    function startVibration() {
+        if (!navigator.vibrate) return;
+        setTimeout(() => {
+            function pulse() { navigator.vibrate([400, 300]); }
+            pulse();
+            vibrateInterval = setInterval(pulse, 700);
+        }, 50);
+    }
+
+    function stopVibration() {
+        if (vibrateInterval) { clearInterval(vibrateInterval); vibrateInterval = null; }
+        if (navigator.vibrate) navigator.vibrate(0);
+    }
+
+    // ── Audio beep ────────────────────────────────────────────
+    // startBeep is async: waits for resume() to complete before playing
+    async function startBeep() {
+        if (alarmInterval) return;
+
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        // Wait until the context is actually running before scheduling audio
+        if (audioCtx.state !== 'running') {
+            await audioCtx.resume();
+        }
+
+        function beep() {
+            if (!audioCtx || audioCtx.state !== 'running') return;
+            const osc  = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.18, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.25);
+        }
+
+        beep();
+        alarmInterval = setInterval(beep, 700);
+    }
+
+    function stopBeep() {
+        if (alarmInterval) { clearInterval(alarmInterval); alarmInterval = null; }
+        // audioCtx stays alive — already unlocked for next alert
+    }
+    // Rimuove lo stato di errore non appena l'utente ricomincia a scrivere
+    document.getElementById('plate').addEventListener('input', function() {
+        this.classList.remove('invalid');
+        this.placeholder = 'e.g. AB123CD';
+    });
+</script>
+</body>
+</html>
