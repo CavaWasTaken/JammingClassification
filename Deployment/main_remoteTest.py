@@ -199,6 +199,7 @@ def main(max_iterations=None, include_unknown=True):
             # Load spectrogram
             if not os.path.exists(spec_path):
                 print(f"⚠ Spectrogram not found: {spec_path}, skipping...")
+                iteration -= 1
                 continue
             
             spec = np.load(spec_path)
@@ -327,7 +328,7 @@ def main(max_iterations=None, include_unknown=True):
                 print(f"Reached max iterations ({max_iterations}), stopping.")
                 break
             
-            time.sleep(0.05)
+            time.sleep(0.01)
             
     except KeyboardInterrupt:
         print(f"\n\n{'='*80}")
