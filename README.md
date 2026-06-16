@@ -1,57 +1,306 @@
-## Portable GNSS Jamming Detection and Classification ##
-**Project Overview**
-This project focuses on the development of a portable, edge-computing device capable of detecting and classifying GNSS (Global Navigation Satellite System) jamming attacks.
+# N-MON: Portable GNSS Jamming Detection and Classification System
 
-While standard detection systems are often stationary and bulky, this project aims to engineer a compact solution suitable for mobile deployment in vehicles (e.g., logistics trucks, cash-in-transit carriers, and autonomous fleets). The system interfaces with a HackRF One Software Defined Radio (SDR) to capture raw RF signals, processes them to extract time-frequency features, and leverages Machine Learning (CNN or GRU models) to classify interference patterns in real-time.
+## Overview
 
-**System Architecture and Methodology**
-The solution is designed to operate on an embedded hardware platform, moving away from desktop-based processing to a portable architecture. The data pipeline consists of the following stages:
+N-MON is a portable GNSS monitoring platform designed to detect and classify radio-frequency jamming attacks in real time. The system combines Software Defined Radio (SDR) technology, signal processing, and Artificial Intelligence to provide continuous protection for GNSS-dependent assets such as logistics fleets, autonomous vehicles, critical infrastructure, and transportation systems.
 
-- **Signal Acquisition:**
-  - Hardware: HackRF One (SDR) + Portable Single Board Computer (SBC).
-  - Sampling Rate: 10 MHz. This frequency is selected to cover the full bandwidth of the GPS signal, ensuring higher fidelity than standard 2 MHz narrowband captures.
-  - Data Format: Complex I/Q samples (In-phase and Quadrature) captured in 100-microsecond bursts.
+Unlike traditional stationary monitoring solutions, N-MON is designed as a compact edge-computing device that can be installed directly on vehicles and operate autonomously without requiring constant connectivity or human supervision.
 
-- **Preprocessing:**
-  - Time-to-Frequency Conversion: The raw complex number array is transformed into the frequency domain using Fourier Transforms.
-  - Spectrogram Generation: The system generates a binary frequency matrix (128 frequency bins x ~1000 samples). This creates a visual representation (image) of the signal, where jamming patterns are more distinct than in the time domain.
+---
 
-- **Classification (Inference):**
-  - The generated spectrograms are fed into a Machine Learning model (Convolutional Neural Network or Light GRU).
-  - The model detects the presence of jamming and classifies the specific type of attack.
+## Motivation
 
-**Jamming Classifications**
-The system is trained to identify and distinguish between the following specific interference waveforms:
+Modern society relies heavily on GNSS (GPS, Galileo, GLONASS, BeiDou) for navigation, synchronization, and asset tracking. Low-cost GNSS jammers are widely available and can disrupt these services, creating significant security risks.
 
-- **Linear Narrowband Jamming:** A continuous wave signal that interferes with GNSS signals over a specific narrow frequency band.
+A notable example is organized cargo theft, where attackers use jamming devices to disable fleet tracking systems and conceal vehicle movements.
 
-- **Linear Wide Fast Frequency Hopping:** A jamming signal that rapidly changes its frequency over a wide band to evade static filters and detection.
+N-MON was developed to provide an affordable and deployable monitoring solution capable of detecting these threats in real time and immediately notifying operators.
 
-- **Ticking Jamming:** A pulsed jamming signal that intermittently disrupts GNSS signals, characterized by a periodic "ticking" pattern in the time domain.
+---
 
-- **Triangular Wave Jamming:** A frequency-modulated jamming signal with a triangular waveform sweep.
+## System Architecture
 
-**Objectives**
-- **Monitor GNSS Signal Integrity:** continuously analyze the RF spectrum to detect anomalies and noise floor elevations associated with interference.
+The system consists of three main subsystems:
 
-- **Classify Attack Vectors:** distinguish between different jamming types to provide actionable intelligence on the nature of the threat.
+### Physical Device
 
-- **Hardware Optimization:** transition the existing desktop-based solution to a portable architecture, optimizing for storage (SSD), RAM, and processing power required to handle 19 kB/s throughput and 100 GB storage requirements.
+* Multi-band GNSS Patch Antenna
+* HackRF One SDR Front-End
+* NVIDIA-based Embedded Processing Unit
+* GNSS Receiver Module
+* Wireless Communication Module (MQTT)
 
-- **Robustness:** ensure the model performs accurately across different hardware configurations, including setups with and without Low Noise Amplifiers (LNA) and varying antenna types.
+### Signal Processing Pipeline
 
-**Applications**
-- **Secure Logistics:** Protecting high-value asset transport vehicles from GPS-spoofing and jamming intended to mask routes or facilitate theft.
+1. GNSS RF signal acquisition using HackRF One
+2. Complex I/Q sample capture at 10 MHz
+3. Short-Time Fourier Transform (STFT)
+4. Spectrogram generation
+5. AI-based classification
+6. Alert generation and transmission
 
-- **Aviation and Maritime:** Ensuring safe positioning and timing data in critical navigation zones.
-- **Critical Infrastructure:** Securing systems that rely on GNSS for precise timing (e.g., telecommunications networks and power grids).
+### Control Center
 
-- **Autonomous Systems:** Providing a first layer of protection for self-driving vehicles against navigation attacks.
+* Real-time monitoring dashboard
+* Driver notification interface
+* Event history and filtering
+* Fleet-wide monitoring
 
-**Dataset Information**
-The project utilizes a custom dataset generated to train the ML models. It includes:
+Communication between the edge device and the monitoring infrastructure is implemented using MQTT through a HiveMQ cloud broker.
 
-- **Clean Signals:** Captured with various antenna configurations and LNA setups.
+---
 
-- **Jammed Signals:** Captured with interference powers ranging from -5 dB to 30 dB (Jamming-to-Signal ratio).
-Note: Due to the high sampling rate and the large volume of raw binary I/Q data (approximated at 100 GB for the full training set), the dataset is not hosted directly in this repository.
+## Signal Acquisition
+
+### Hardware
+
+* HackRF One SDR
+* GNSS Patch Antenna
+* Embedded NVIDIA Processing Unit
+
+### Sampling Configuration
+
+| Parameter         | Value                       |
+| ----------------- | --------------------------- |
+| Sampling Rate     | 10 MHz                      |
+| Signal Type       | Complex I/Q                 |
+| Processing Method | STFT Spectrogram            |
+| Deployment        | Vehicle-mounted edge device |
+
+The selected sampling rate allows coverage of the entire GPS L-band signal bandwidth while preserving sufficient frequency resolution for jamming analysis.
+
+---
+
+## AI-Based Jamming Classification
+
+The project uses a lightweight deep-learning pipeline based on spectrogram analysis.
+
+### Feature Extraction
+
+Raw I/Q samples are converted into time-frequency representations using STFT. The resulting spectrograms are used as image-like inputs for the neural network.
+
+### Classification Model
+
+* ResNet18-based classifier
+* Quantized INT8 inference for embedded deployment
+* Real-time execution on edge hardware
+
+### Supported Classes
+
+The system detects and classifies:
+
+* Clean GNSS Signals
+* Linear Narrowband (LN)
+* Linear Wide Fast Frequency Hopping (LWF)
+* Ticking Jamming (TICK)
+* Triangular Sweep Jamming (TRI)
+* Triangular Wide Sweep Jamming (TRIW)
+
+To reduce false alarms, an alert is generated only after three consecutive classifications of the same jamming type.
+
+---
+
+## Real-Time Alerting System
+
+When a jammer is detected:
+
+1. The edge device classifies the interference type.
+2. An MQTT alert is published.
+3. The Driver UI receives an immediate notification.
+4. The Control Center dashboard records the event.
+5. Vehicle position and event metadata are logged.
+
+The communication layer supports:
+
+* MQTT QoS Level 1 delivery
+* Last Will and Testament (LWT)
+* Automatic message recovery after reconnection
+* Multi-vehicle topic separation
+
+---
+
+## User Interface
+
+### Driver Interface
+
+Provides:
+
+* Current signal status
+* Jamming alerts
+* Device operational status
+
+### Control Center Dashboard
+
+Provides:
+
+* Fleet monitoring
+* Active vehicle tracking
+* Jamming event history
+* Event filtering
+* Geographic visualization
+* CSV export and restore functionality
+
+Additional features:
+
+* Clear History
+* Restore History
+* Persistent event logging
+
+---
+
+## Test Results
+
+### Hardware & Acquisition
+
+| Test                        | Result |
+| --------------------------- | ------ |
+| Continuous IQ Acquisition   | PASS   |
+| Position + IQ Streaming     | PASS   |
+| 1-Hour Autonomous Operation | PASS   |
+| Startup Time                | 70 s   |
+
+### AI Performance
+
+| Metric                                  | Result                       |
+| --------------------------------------- | ---------------------------- |
+| Clean Signal Accuracy                   | 97%                          |
+| Average Jamming Classification Accuracy | 95%                          |
+| Low-JSR Robustness                      | 3/5 classes passed           |
+| Unknown Jamming Detection               | 78% detected as interference |
+
+### Communication
+
+| Test                  | Result |
+| --------------------- | ------ |
+| Alert Delivery        | PASS   |
+| LWT Offline Detection | PASS   |
+| Network Recovery      | PASS   |
+| Multi-Vehicle Routing | PASS   |
+
+### User Interface
+
+| Test                     | Result |
+| ------------------------ | ------ |
+| Driver UI Load Time      | < 5 s  |
+| Control Center Load Time | < 10 s |
+| Alert Visualization      | PASS   |
+| Event Filtering          | PASS   |
+
+---
+
+## Performance Analysis
+
+Current average end-to-end latency:
+
+**350 ms**
+
+Latency distribution:
+
+| Stage                  | Contribution |
+| ---------------------- | ------------ |
+| Feature Extraction     | 51.6%        |
+| Spectrogram Generation | 30.1%        |
+| CNN Inference          | 9.2%         |
+| INT8 Conversion        | 9.2%         |
+
+The primary bottleneck is CPU-bound preprocessing rather than neural network inference.
+
+---
+
+## Dataset
+
+The training dataset consists of:
+
+### Clean Samples
+
+Collected using multiple:
+
+* Antennas
+* Receiver configurations
+* LNA setups
+
+### Jammed Samples
+
+Generated across multiple:
+
+* Jamming waveforms
+* Jamming-to-Signal Ratios (JSR)
+* Power levels ranging from -5 dB to +30 dB
+
+Due to the large volume of raw I/Q recordings (approximately 100 GB), the complete dataset is not included in this repository.
+
+---
+
+## Requirements Satisfaction
+
+The final prototype successfully satisfies:
+
+### User Requirements
+
+* Plug-and-play deployment
+* Real-time threat visualization
+* Automatic alert generation
+
+### Functional Requirements
+
+* Continuous GNSS monitoring
+* Time-frequency signal processing
+* AI-based jamming classification
+* Dashboard visualization
+* Remote alert transmission
+
+### Technical Requirements
+
+* SDR-based RF acquisition
+* Real-time AI inference
+* STFT processing pipeline
+* Synthetic jammer test environment
+* MQTT communication infrastructure
+
+---
+
+## Future Improvements
+
+### Open-Set Recognition
+
+Current unknown-jammer detection:
+
+* Current: 32.8%
+* Target: >80%
+
+Future work includes:
+
+* Per-class threshold calibration
+* Advanced Open-Set Recognition techniques
+* Improved feature-space separation
+
+### Performance Optimization
+
+Current latency:
+
+* Current: 350 ms
+* Target: <100 ms
+
+Potential improvements:
+
+* ARM-optimized DSP libraries
+* C++ preprocessing pipeline
+* GPU-accelerated feature extraction
+
+---
+
+## Project Team
+
+Group G — Interdisciplinary Project 2025/2026
+
+* Lorenzo Braia
+* Lorenzo Cavallaro
+* Simone Peradotto
+
+Politecnico di Torino
+
+---
+
+## Disclaimer
+
+This repository contains software, documentation, and models developed for academic and research purposes. The generated dataset and some project assets are not publicly distributed due to storage requirements and licensing constraints.
