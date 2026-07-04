@@ -293,9 +293,9 @@ Potential improvements:
 
 Group G — Interdisciplinary Project 2025/2026
 
-* Lorenzo Braia
-* Lorenzo Cavallaro
-* Simone Peradotto
+* Lorenzo Braia - s346316@studenti.polito.it
+* Lorenzo Cavallaro - s346742@studenti.polito.it
+* Simone Peradotto - s343420@studenti.polito.it
 
 Politecnico di Torino
 
