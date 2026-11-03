@@ -193,7 +193,7 @@ def calibrate_thresholds_on_validation(sess, train_df, val_known_df, val_unknown
     
     Strategy:
     - For each class, compute distances from validation known samples
-    - Use ROC curve: x=FPR on known validation, y=TPR on unknown
+    - Use ROC curve: x=FPR (negatives accepted: other classes + unknown), y=TPR (target-class samples accepted)
     - Choose operating point with max_fpr constraint
     - Returns per-class thresholds
     

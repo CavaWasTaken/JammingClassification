@@ -1,0 +1,16 @@
+{
+    "hivemq": {
+        "host": "<your-cluster>.hivemq.cloud",
+        "port_wss": 8884,
+        "port_tcp": 8883,
+        "username": "<username>",
+        "password": "<password>"
+    },
+    "topics": {
+        "alerts": "NMON/alert",
+        "status": "NMON/status"
+    },
+    "plate": "<vehicle-plate>",
+    "status_update_interval_seconds": 10,
+    "number_of_consecutive_alerts": 3
+}

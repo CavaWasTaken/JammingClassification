@@ -1,8 +1,19 @@
+# Large local data (not distributed, see README > Dataset)
 Dataset_generation/image_dataset_generation/array_dataset
 Dataset_generation/image_dataset_generation/array_dataset_clean
 NMon_Dataset_10MHz/image_dataset
-.venv
-__pycache__
-predictions.csvDeployment/*.csv
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Secrets: copy config.example.json to config.json and fill in your credentials
+config.json
+
+# Runtime outputs on the edge device
+predictions.csv
+Deployment/*.csv
 Deployment/export/last_known_location.json
 Deployment/trt_cache/

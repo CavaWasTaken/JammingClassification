@@ -14,7 +14,7 @@ def main():
     features_csv_path = "./NMon_Dataset_10MHz/all_features_scaled.csv"
     osr_stats_output = "./Deployment/export/osr_stats.npz"
     val_split = 0.3
-    max_fpr = 0.05  # Max 5% false rejection rate on known samples
+    max_fpr = 0.05  # Max 5% of negatives (other classes + unknown) accepted per class
     
     # Validation unknown jammer types
     unknown_jammers = {
